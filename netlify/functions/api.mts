@@ -42,17 +42,20 @@ export default async (req: Request, _context: Context) => {
     // It refuses this session's own fetcher, but that is a different network
     // and the question is worth settling with evidence rather than assumption.
     // Reports status codes only, one request each, then gets deleted.
-    const targets = [
-      "https://www.pokemoncenter.com/robots.txt",
-      "https://www.pokemoncenter.com/en-ca",
-      "https://www.pokemoncenter.com/sitemap.xml",
-      "https://www.pokemoncenter.com/en-ca/category/trading-card-game",
-    ];
+    const extra = new URL(req.url).searchParams.get("u");
+    const targets = extra
+      ? [extra]
+      : ["https://www.pokemoncenter.com/robots.txt", "https://www.pokemoncenter.com/sitemap.xml"];
     const results = await Promise.all(
       targets.map(async (url) => {
         try {
-          const text = await grab(url, 8000, 0);
-          return { url, ok: true, length: text.length, head: text.slice(0, 200) };
+          const text = await grab(url, 9000, 0);
+          return {
+            url,
+            ok: true,
+            length: text.length,
+            body: text.length <= 4000 ? text : text.slice(0, 4000) + " …TRUNCATED",
+          };
         } catch (err) {
           return { url, ok: false, error: String(err).slice(0, 80) };
         }
