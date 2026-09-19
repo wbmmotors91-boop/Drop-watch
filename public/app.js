@@ -241,7 +241,16 @@ async function boot() {
   $("test").addEventListener("click", test);
   $("check").addEventListener("click", checkNow);
   await loadState();
-  setInterval(loadState, 120000);
+  // Refresh on its own so the button is never the only way to see what's
+  // there. Skip the tick while the app is in the background, because a phone
+  // that is asleep gains nothing from it, and refresh the moment it comes
+  // back to the front instead: that is when someone is actually looking.
+  setInterval(() => {
+    if (document.visibilityState === "visible") loadState();
+  }, 120000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") loadState();
+  });
 }
 
 boot();
