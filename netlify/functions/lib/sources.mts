@@ -363,6 +363,95 @@ export async function pollFeeds(
   return (await Promise.all(perHost)).flat();
 }
 
+export type FlatSitemapOptions = {
+  name: string;
+  robotsUrl: string;
+  sitemapUrl: string;
+  /** Path fragment that marks a product URL, e.g. "/shop/". */
+  productPattern: string;
+  validators?: Record<string, { etag: string; lastModified: string }>;
+};
+
+export type FlatSitemapResult = {
+  items: Item[];
+  validators: Record<string, { etag: string; lastModified: string }>;
+  unchanged: boolean;
+  blocked: boolean;
+};
+
+/**
+ * Read a store that publishes one flat sitemap rather than an index.
+ *
+ * Pokémon Center splits its catalogue across child sitemaps; EB Games Canada
+ * puts everything in a single urlset. Same idea, simpler shape, so this is a
+ * separate function rather than another branch inside pollSitemap: that one is
+ * full of hard-won Imperva handling that has no bearing here.
+ *
+ * robots.txt is read and obeyed first, exactly as for Pokémon Center. If they
+ * ever disallow the sitemap, this stops on its own.
+ */
+export async function pollFlatSitemap(
+  opts: FlatSitemapOptions,
+  include: string[],
+  exclude: string[],
+  notes: string[],
+  disallowed: string[],
+): Promise<FlatSitemapResult> {
+  const { name, sitemapUrl, productPattern, validators = {} } = opts;
+
+  if (isDisallowed(sitemapUrl, disallowed)) {
+    notes.push(`${name}: their robots.txt disallows the sitemap, leaving it alone`);
+    return { items: [], validators: {}, unchanged: false, blocked: false };
+  }
+
+  let xml = "";
+  let unchanged = false;
+  const next = { etag: "", lastModified: "" };
+  try {
+    const got = await grabConditional(sitemapUrl, 9000, 1, validators[sitemapUrl] || {});
+    xml = got.body;
+    unchanged = got.unchanged;
+    next.etag = got.etag || validators[sitemapUrl]?.etag || "";
+    next.lastModified = got.lastModified || validators[sitemapUrl]?.lastModified || "";
+  } catch (err) {
+    const refused = String(err).includes("403");
+    notes.push(`${name} sitemap: ${String(err).slice(0, 60)}`);
+    return { items: [], validators: {}, unchanged: false, blocked: refused };
+  }
+
+  if (unchanged) {
+    notes.push(`${name}: unchanged since the last check, nothing re-read`);
+    return { items: [], validators: { [sitemapUrl]: next }, unchanged: true, blocked: false };
+  }
+
+  const entries = extractUrlEntries(xml);
+  if (!entries.length) {
+    // Same tell as Pokémon Center: a 200 carrying no sitemap is a block page.
+    notes.push(`${name}: no URLs in the response (${describeBody(xml)})`);
+    return { items: [], validators: {}, unchanged: false, blocked: false };
+  }
+
+  const products = entries.filter((e) => e.loc.includes(productPattern));
+  const out: Item[] = [];
+  for (const { loc } of products) {
+    if (isDisallowed(loc, disallowed)) continue;
+    // Their slugs end in the product id: strip it so the title reads as a name.
+    const title = titleFromUrl(loc.replace(/-\d+$/, ""));
+    if (!matches(title, include, exclude)) continue;
+    out.push({
+      key: `eb:${loc}`,
+      title,
+      source: name,
+      url: loc,
+      detail: `listed on ${name}'s own sitemap`,
+    });
+  }
+  notes.push(
+    `${name}: ${entries.length} URLs, ${products.length} products, ${out.length} sealed matches`,
+  );
+  return { items: out, validators: { [sitemapUrl]: next }, unchanged: false, blocked: false };
+}
+
 export async function pollRetailers(
   sites: Retailer[],
   include: string[],

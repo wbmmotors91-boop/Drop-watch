@@ -266,32 +266,6 @@ export const FEEDS: Feed[] = [
     requireAny: STORE_SIGHTING_STORES,
     requireAlso: STORE_SIGHTING_PLACES,
   },
-
-  // EB Games Canada.
-  //
-  // Their own site cannot be watched: hosted requests get a 403, and the
-  // sitemap their robots.txt advertises serves a storefront page rather than
-  // a list of URLs, so there is no published product list to diff. What is
-  // left is people reporting their preorders and restocks, which is a tip
-  // like the Walmart one and is treated the same way.
-  //
-  // Gated on Canada rather than on his towns: EB Games preorders open online
-  // nationally, so a post from Ottawa is still useful to him, where a Walmart
-  // shelf in Ottawa is not.
-  {
-    name: "EB Games Canada",
-    rotate: "reddit",
-    url:
-      "https://www.reddit.com/search.rss?q=" +
-      encodeURIComponent(
-        '("eb games" OR ebgames) pokemon ' +
-          '(restock OR preorder OR "in stock" OR drop OR live)',
-      ) +
-      "&sort=new&t=week",
-    include: STORE_SIGHTING_PRODUCTS,
-    requireAny: EB_GAMES_TERMS,
-    requireAlso: CANADIAN_TERMS,
-  },
 ];
 
 /**
@@ -302,6 +276,28 @@ export const FEEDS: Feed[] = [
  * retailer back is one entry.
  */
 export const RETAILERS: Retailer[] = [];
+
+/**
+ * EB Games Canada's own sitemap.
+ *
+ * Found on 2026-09-19 after Aaron asked me to look again. An earlier check
+ * this session concluded their sitemap served a storefront page; that was
+ * wrong, and the mistake was reading a summary of the response rather than
+ * the response. It is a real urlset: roughly 950 URLs in one flat file, with
+ * products under /shop/, so it can be diffed for new SKUs the same way
+ * Pokémon Center's is.
+ *
+ * Whether a server is allowed to read it is a separate question from whether
+ * it exists, and their storefront HTML has refused hosted requests before. The
+ * pass records what came back either way, so the app shows the answer instead
+ * of failing quietly.
+ */
+export const EB_GAMES = {
+  name: "EB Games Canada",
+  robotsUrl: "https://www.ebgames.ca/robots.txt",
+  sitemapUrl: "https://www.ebgames.ca/sitemap.xml",
+  productPattern: "/shop/",
+};
 
 /**
  * Pokémon Center's own sitemap.
@@ -339,7 +335,7 @@ export const PUSH_SOURCES = ["Pokémon Center"];
  * out, so it cannot drift from what is actually being read.
  */
 export function activeSources(): string[] {
-  return ["Pokémon Center", ...FEEDS.map((f) => f.name), ...RETAILERS.map((r) => r.name)]
+  return ["Pokémon Center", EB_GAMES.name, ...FEEDS.map((f) => f.name), ...RETAILERS.map((r) => r.name)]
     .concat(UPC_QUERIES.length ? ["UPC database"] : []);
 }
 

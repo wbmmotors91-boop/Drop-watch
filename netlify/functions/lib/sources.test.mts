@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle, skuFromUrl,
+  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, regionalise, feedsForCycle, skuFromUrl,
 } from "./sources.mts";
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
@@ -637,6 +637,44 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a named Canadian merchant counts", canadianOffer([{ link: "https://shop.example/x", merchant: "Toys R Us Canada" }]), "https://shop.example/x");
   check("no offers at all is safe", canadianOffer(undefined), "");
   check("a malformed offer is skipped", canadianOffer([{ link: "not a url" }, { link: "https://indigo.ca/z" }]), "https://indigo.ca/z");
+}
+
+{
+  console.log("a flat sitemap");
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><urlset>
+    <url><loc>https://www.ebgames.ca/stores/17600-yonge-st-2588</loc></url>
+    <url><loc>https://www.ebgames.ca/shop/pokemon-tcg-mega-evolution-elite-trainer-box-117277</loc></url>
+    <url><loc>https://www.ebgames.ca/shop/pokemon-plush-pikachu-118000</loc></url>
+    <url><loc>https://www.ebgames.ca/shop/animal-crossing-new-horizons-136602</loc></url>
+  </urlset>`;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => ({
+    ok: true, status: 200, headers: new Headers(), text: async () => xml,
+  })) as any;
+  const notes: string[] = [];
+  const res = await pollFlatSitemap(
+    { name: "EB Games Canada", robotsUrl: "https://www.ebgames.ca/robots.txt",
+      sitemapUrl: "https://www.ebgames.ca/sitemap.xml", productPattern: "/shop/" },
+    KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, [],
+  );
+  globalThis.fetch = realFetch;
+
+  check("only the sealed product matches", res.items.length, 1);
+  check("the trailing id is stripped from the title", res.items[0]?.title,
+    "Pokemon Tcg Mega Evolution Elite Trainer Box");
+  check("it keeps the real product URL", res.items[0]?.url,
+    "https://www.ebgames.ca/shop/pokemon-tcg-mega-evolution-elite-trainer-box-117277");
+  check("it is attributed to EB Games", res.items[0]?.source, "EB Games Canada");
+  check("a store page is not a product", res.items.some((i) => i.url.includes("/stores/")), false);
+
+  // A disallowed sitemap is not read at all, whatever it contains.
+  const blockedNotes: string[] = [];
+  const off = await pollFlatSitemap(
+    { name: "EB Games Canada", robotsUrl: "https://www.ebgames.ca/robots.txt",
+      sitemapUrl: "https://www.ebgames.ca/sitemap.xml", productPattern: "/shop/" },
+    KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, blockedNotes, ["/sitemap"],
+  );
+  check("robots.txt is obeyed", off.items.length, 0);
 }
 
 {

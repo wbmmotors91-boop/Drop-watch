@@ -1,9 +1,10 @@
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
+import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
 import {
   CANADIAN_TERMS,
+  EB_GAMES,
   FEEDS,
   activeSources,
   KEYWORDS_EXCLUDE,
@@ -93,6 +94,8 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let pcChildren: string[] | undefined;
   let newsCursor: number | undefined;
   let robots: { rules: string[]; at: number } | undefined;
+  let ebRobots: { rules: string[]; at: number } | undefined;
+  let ebSkipped = false;
   let stockProbedAt: number | undefined;
   let stockProbe: { at: number; result: string } | undefined;
   let pcFailures: number | undefined;
@@ -226,11 +229,41 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     // Advance the rotation so the Reddit feeds take turns instead of all
     // three asking at once and two of them earning a 429.
     newsCursor = ((await readJson<Meta>("meta", {})).newsCursor || 0) + 1;
-    const [feedItems, retailItems] = await Promise.all([
+    // EB Games publishes one flat sitemap of its own, so it rides along with
+    // this pass rather than earning a scheduled function: two extra requests
+    // every five minutes against a store that has never asked us to slow down.
+    const ebPrior = await readJson<Meta>("meta", {});
+    const ebCached = ebPrior.ebRobots;
+    let ebDisallowed: string[] = [];
+    if (ebCached && Date.now() - ebCached.at < ROBOTS_MAX_AGE_MS) {
+      ebDisallowed = ebCached.rules;
+    } else {
+      try {
+        ebDisallowed = parseDisallowed(await grab(EB_GAMES.robotsUrl, 8000));
+        ebRobots = { rules: ebDisallowed, at: Date.now() };
+      } catch (err) {
+        // Same rule as Pokémon Center: no robots, no reading.
+        notes.push(`${EB_GAMES.name} robots.txt: ${String(err).slice(0, 60)}`);
+        ebSkipped = true;
+      }
+    }
+    const [feedItems, retailItems, ebResult] = await Promise.all([
       pollFeeds(FEEDS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, NEWS_REQUIRE_ANY, 20000, newsCursor),
       pollRetailers(RETAILERS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes),
+      ebSkipped
+        ? Promise.resolve(null)
+        : pollFlatSitemap(
+            { ...EB_GAMES, validators: await readJson("ebValidators", {}) },
+            KEYWORDS_INCLUDE,
+            KEYWORDS_EXCLUDE,
+            notes,
+            ebDisallowed,
+          ),
     ]);
-    items = [...feedItems, ...retailItems];
+    if (ebResult && Object.keys(ebResult.validators).length) {
+      await writeJson("ebValidators", ebResult.validators);
+    }
+    items = [...feedItems, ...retailItems, ...(ebResult?.items || [])];
   } else {
     items = await pollUpc(UPC_QUERIES, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes);
   }
@@ -345,6 +378,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(pcChildren ? { pcChildren } : {}),
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(robots ? { robots } : {}),
+    ...(ebRobots ? { ebRobots } : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
     ...(stockProbe ? { stockProbe } : {}),
     ...(pcFailures === undefined && pcChallenges === undefined
@@ -363,7 +397,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       kind === "pc"
         ? ["Pokémon Center"]
         : kind === "news"
-          ? [...FEEDS, ...RETAILERS].map((s) => s.name)
+          ? [...FEEDS, ...RETAILERS].map((s) => s.name).concat(EB_GAMES.name)
           : ["UPC database"],
     found: fresh.length,
     notified,
