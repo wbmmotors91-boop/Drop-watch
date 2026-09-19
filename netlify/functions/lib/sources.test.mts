@@ -428,6 +428,17 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
     "Pokemon Tcg Three Pack Blister Pikachu",
     "Pokemon Tcg Mewtwo Ex Box",
     "Pokemon Tcg Special Collection Greninja",
+    // Real Pokémon Center names, from what the widened list actually matched.
+    "Pokemon Tcg 30th Celebration Mini Tins 10 Pack",
+    "Pokemon Tcg Mega Charizard Tin Mega Charizard X",
+    "Pokemon Tcg Mega Evolution Perfect Order Build And Battle Box",
+    "Pokemon Tcg Mega Evolution Ascended Heroes Mega Feraligatr Ex Box",
+    "Pokemon Tcg Trainer S Toolkit 2025",
+    "Pokemon Tcg Unova Mini Tin Display Box 8 Tins",
+    "Pokemon Tcg Collector Chest Fall 2024",
+    "Pokemon Tcg Scarlet And Violet Paradox Rift Build And Battle Stadium",
+    "Pokemon Tcg Slashing Legends Tin Zacian Ex",
+    "Pokemon Tcg Scarlet And Violet Prismatic Evolutions Accessory Pouch Special Collection",
   ];
   const dont = [
     "Pokemon Center Pikachu Plush 8 In",
@@ -442,6 +453,18 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
     "Pokemon Center Card File Box Eevee",
     "What Did I Pull From A Booster Box",
     "Deck Profile Gardevoir Elite Trainer Box",
+    // Also real Pokémon Center names. Widening the net caught every one of
+    // these, and each would have been a notification about socks.
+    "Poke Ball Pattern Crew Socks Box Set 3 Pairs One Size Adult",
+    "Pokemon Primers Box Set Collection Volume 2",
+    "Pokemon Deluxe Pins Pikachu Pin Box Set 3 Pack",
+    "Nature Is Timeless Pokemon Gardening Tin Sign",
+    "Pokemon Holiday Pin Box Set",
+    "Pokemon Deluxe Character Guide Limited Edition Box Set",
+    "Pokemon Fossil Museum Skeletons Pin Box Set 4 Pack",
+    "Pokemon Center Van Gogh Museum Pokemon Inspired By Paintings Pin Box Set 6 Pack",
+    "Pokemon 30th Celebration Poster Collection",
+    "Pokemon 30th Celebration Tech Sticker Collection",
   ];
 
   const missed = want.filter((t) => !matches(t, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE));

@@ -49,7 +49,7 @@ export const KEYWORDS_INCLUDE = [
  * this, broadening the net once fires a notification for every one of them.
  * A pass that sees a new version takes the new matches in silently.
  */
-export const KEYWORDS_VERSION = 3;
+export const KEYWORDS_VERSION = 4;
 
 /**
  * News feeds additionally have to say something is actually happening.
@@ -103,6 +103,16 @@ export const KEYWORDS_EXCLUDE = [
   "pin badge",
   "t-shirt",
   "hoodie",
+  // Widening to box sets and tins pulled these in from Pokémon Center's own
+  // catalogue: socks sold as a "box set", pin box sets, books, and metal
+  // signs that happen to be called tin. Real product names, all of them.
+  "socks",
+  "pin box",
+  "tin sign",
+  "primers",
+  "character guide",
+  "poster collection",
+  "sticker collection",
 ];
 
 /**
