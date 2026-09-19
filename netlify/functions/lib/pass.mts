@@ -39,6 +39,19 @@ export function backoffFor(failures: number): number {
   return Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS);
 }
 
+/**
+ * Challenges are milder than refusals, and the odd one is ordinary, so the
+ * first few cost nothing. A run of them is the warning that came before the
+ * outright block, and it is cheaper to ease off then than to recover after.
+ */
+const CHALLENGE_GRACE = 3;
+const CHALLENGE_MAX_MS = 30 * 60 * 1000;
+
+export function challengeBackoffFor(challenges: number): number {
+  if (challenges <= CHALLENGE_GRACE) return 0;
+  return Math.min(BACKOFF_BASE_MS * 2 ** (challenges - CHALLENGE_GRACE - 1), CHALLENGE_MAX_MS);
+}
+
 export type PassResult = {
   checked: string[];
   found: number;
@@ -57,6 +70,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let robots: { rules: string[]; at: number } | undefined;
   let stockProbedAt: number | undefined;
   let pcFailures: number | undefined;
+  let pcChallenges: number | undefined;
   let pcBlockedUntil: number | undefined;
 
   if (kind === "pc") {
@@ -109,11 +123,25 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     items = sitemap.items;
 
     if (sitemap.blocked) {
+      // A flat refusal. Stay away, and for longer each time.
       pcFailures = (priorMeta.pcFailures || 0) + 1;
       pcBlockedUntil = Date.now() + backoffFor(pcFailures);
       notes.push(`backing off ${Math.round(backoffFor(pcFailures) / 60000)} min before asking again`);
+    } else if (sitemap.challenged) {
+      // A challenge is milder than a refusal and one is normal, but a run of
+      // them is what came immediately before they shut us out altogether.
+      // Ease off before that happens rather than after.
+      pcChallenges = (priorMeta.pcChallenges || 0) + 1;
+      const wait = challengeBackoffFor(pcChallenges);
+      if (wait) {
+        pcBlockedUntil = Date.now() + wait;
+        notes.push(
+          `challenged ${pcChallenges} times in a row, easing off for ${Math.round(wait / 60000)} min`,
+        );
+      }
     } else if (sitemap.items.length || sitemap.allUnchanged) {
       pcFailures = 0;
+      pcChallenges = 0;
       pcBlockedUntil = 0;
     }
     // Remember the child sitemaps so a challenged index does not stop the watch.
@@ -254,7 +282,13 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(robots ? { robots } : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
-    ...(pcFailures === undefined ? {} : { pcFailures, pcBlockedUntil }),
+    ...(pcFailures === undefined && pcChallenges === undefined
+      ? {}
+      : {
+          ...(pcFailures === undefined ? {} : { pcFailures }),
+          ...(pcChallenges === undefined ? {} : { pcChallenges }),
+          ...(pcBlockedUntil === undefined ? {} : { pcBlockedUntil }),
+        }),
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
     ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });

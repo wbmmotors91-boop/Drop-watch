@@ -22,6 +22,8 @@ export type Meta = {
   lastStockProbe?: number;
   /** Consecutive refusals from Pokémon Center, and when to try them again. */
   pcFailures?: number;
+  /** Consecutive challenge pages, eased off before they become refusals. */
+  pcChallenges?: number;
   pcBlockedUntil?: number;
   seeded?: boolean;
   lastPoll?: number;

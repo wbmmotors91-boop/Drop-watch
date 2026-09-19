@@ -1,5 +1,5 @@
 import { env, itemsAfterPrune } from "./store.mjs";
-import { backoffFor } from "./pass.mjs";
+import { backoffFor, challengeBackoffFor } from "./pass.mjs";
 
 let fails = 0;
 const check = (n: string, got: any, want: any) => {
@@ -54,6 +54,15 @@ check("throwing global does not break it", env("PC_TEST"), "from-process");
   check("it caps at an hour", backoffFor(9), 60 * 60 * 1000);
   check("and stays capped", backoffFor(100), 60 * 60 * 1000);
   check("a negative count is treated as none", backoffFor(-1), 0);
+
+  // The odd challenge is ordinary and must cost nothing, or the watch spends
+  // its life backing off from normal behaviour.
+  check("one challenge is free", challengeBackoffFor(1), 0);
+  check("so are three", challengeBackoffFor(3), 0);
+  check("the fourth eases off", challengeBackoffFor(4), 5 * 60 * 1000);
+  check("the fifth doubles", challengeBackoffFor(5), 10 * 60 * 1000);
+  check("it caps at half an hour", challengeBackoffFor(20), 30 * 60 * 1000);
+  check("a challenge never waits as long as a refusal", challengeBackoffFor(20) < backoffFor(20), true);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed");

@@ -531,6 +531,8 @@ export type SitemapResult = {
   allUnchanged: boolean;
   /** True when they refused us outright, which means back off, not retry. */
   blocked: boolean;
+  /** True when they served a challenge page instead of the sitemap. */
+  challenged: boolean;
 };
 
 export function isDisallowed(url: string, disallowed: string[]): boolean {
@@ -629,6 +631,7 @@ async function scanChildren(
     validators: nextValidators,
     allUnchanged: unchanged > 0 && read === 0,
     blocked,
+    challenged: false,
   };
 }
 
@@ -663,7 +666,7 @@ export async function pollSitemap(
     if (refused || !knownChildren.length) {
       return {
         items: [], children: [], lastmods: {}, withLastmod: 0,
-        validators: {}, allUnchanged: false, blocked: refused,
+        validators: {}, allUnchanged: false, blocked: refused, challenged: false,
       };
     }
     notes.push(`Pokémon Center: trying ${knownChildren.length} child sitemaps from an earlier cycle`);
@@ -678,7 +681,7 @@ export async function pollSitemap(
   if (indexUnchanged) {
     if (!knownChildren.length) {
       notes.push("Pokémon Center: index unchanged but no child sitemaps remembered yet");
-      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false };
+      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false, challenged: false };
     }
     const scanned = await scanChildren(knownChildren, opts, include, exclude, notes);
     return {
@@ -693,7 +696,7 @@ export async function pollSitemap(
     notes.push(
       `Pokémon Center: challenged this cycle, standing down until the next one (${describeBody(indexXml)})`,
     );
-    return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false };
+    return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false, challenged: true };
   }
 
   // Prefer a child sitemap that names itself after products, but do not
