@@ -1,10 +1,11 @@
 {
-  "name": "pc-alert",
+  "name": "drop-watch",
   "version": "1.0.0",
-  "description": "",
+  "description": "Push alerts for new sealed Pokemon TCG product",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --experimental-strip-types netlify/functions/lib/sources.test.mts && npm run test:env",
+    "test:env": "esbuild netlify/functions/lib/env.test.mts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=.test-env.mjs && node .test-env.mjs"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +14,9 @@
     "@netlify/blobs": "^11.1.0",
     "@netlify/functions": "^6.0.0",
     "web-push": "^3.6.7"
+  },
+  "private": true,
+  "devDependencies": {
+    "esbuild": "^0.25.0"
   }
 }

@@ -14,6 +14,23 @@ export type Meta = {
   lastNotes?: string[];
 };
 
+/**
+ * Read a site environment variable.
+ *
+ * Netlify exposes these two ways and they do not always agree: the `Netlify`
+ * global came back empty on this site while `process.env` had the value, so
+ * try both rather than trusting either.
+ */
+export function env(name: string): string {
+  try {
+    const viaGlobal = (globalThis as any).Netlify?.env?.get?.(name);
+    if (viaGlobal) return String(viaGlobal);
+  } catch {
+    // The global is not there in every runtime. Fall through.
+  }
+  return process.env[name] || "";
+}
+
 export function store() {
   return getStore({ name: "pc-alert", consistency: "strong" });
 }
@@ -43,14 +60,10 @@ export async function addItems(fresh: Item[]): Promise<Item[]> {
 }
 
 function vapidReady(): boolean {
-  const pub = Netlify.env.get("VAPID_PUBLIC_KEY");
-  const priv = Netlify.env.get("VAPID_PRIVATE_KEY");
+  const pub = env("VAPID_PUBLIC_KEY");
+  const priv = env("VAPID_PRIVATE_KEY");
   if (!pub || !priv) return false;
-  webpush.setVapidDetails(
-    Netlify.env.get("VAPID_SUBJECT") || "mailto:alerts@example.com",
-    pub,
-    priv,
-  );
+  webpush.setVapidDetails(env("VAPID_SUBJECT") || "mailto:alerts@example.com", pub, priv);
   return true;
 }
 

@@ -1,6 +1,6 @@
 import type { Config, Context } from "@netlify/functions";
 import type { Item } from "./lib/sources.mjs";
-import { readJson, writeJson, pushAll, type Meta, type Sub } from "./lib/store.mjs";
+import { env, readJson, writeJson, pushAll, type Meta, type Sub } from "./lib/store.mjs";
 import { runPass } from "./lib/pass.mjs";
 import { FEEDS, RETAILERS } from "./lib/config.mjs";
 
@@ -27,8 +27,8 @@ export default async (req: Request, _context: Context) => {
       readJson<Meta>("meta", {}),
     ]);
     return json({
-      publicKey: Netlify.env.get("VAPID_PUBLIC_KEY") || "",
-      pushConfigured: Boolean(Netlify.env.get("VAPID_PRIVATE_KEY")),
+      publicKey: env("VAPID_PUBLIC_KEY"),
+      pushConfigured: Boolean(env("VAPID_PRIVATE_KEY")),
       watching: [...FEEDS, ...RETAILERS].map((s) => s.name).concat("UPC database"),
       items: items.slice(0, 60),
       lastPoll: meta.lastPoll || null,

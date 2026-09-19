@@ -95,8 +95,13 @@ because the listing appearing is itself the event.
 ## Tests
 
 ```bash
-node --experimental-strip-types netlify/functions/lib/sources.test.mts
+npm test
 ```
 
-Covers the feed parsers, keyword matching and listing extraction against
-fixtures, so it runs without touching anyone's site.
+Covers the feed parsers, keyword matching, listing extraction and
+environment-variable reading, all against fixtures, so it runs without
+touching anyone's site.
+
+The environment test exists because Netlify exposes site variables two ways
+and they did not agree here: the `Netlify` global read empty on this site
+while `process.env` held the value. `env()` in `lib/store.mts` tries both.
