@@ -183,8 +183,13 @@ export function extractProducts(html: string, pattern: string, base: string): [s
 export type Feed = { name: string; url: string };
 export type Retailer = { name: string; url: string; pattern: string };
 
-/** Gap between two requests to the same host, to stay under rate limits. */
-const SAME_HOST_GAP_MS = 1100;
+/**
+ * Gap between two requests to the same host.
+ *
+ * Four seconds because Reddit still answered 429 at one second. Keep the
+ * number of feeds per host low enough that this fits inside the budget.
+ */
+const SAME_HOST_GAP_MS = 4000;
 
 function hostOf(url: string): string {
   try {

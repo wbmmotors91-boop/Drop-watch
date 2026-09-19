@@ -57,11 +57,19 @@ export const KEYWORDS_EXCLUDE = [
 
 export const FEEDS: Feed[] = [
   { name: "Dexerto", url: "https://www.dexerto.com/pokemon/feed/" },
+
+  // Reddit throttles hard, so ask it as few times as possible: one broad
+  // search covering every product word, and one scoped to the Canadian deals
+  // subreddit. Three narrower searches earned a 429 on two of them every
+  // cycle, even spaced out.
   {
-    name: "Reddit drop chatter",
+    name: "Reddit drops",
     url:
       "https://www.reddit.com/search.rss?q=" +
-      encodeURIComponent('"pokemon center" (restock OR preorder OR drop OR live)') +
+      encodeURIComponent(
+        '("pokemon center" OR "elite trainer box" OR "booster box" OR "ultra premium collection") ' +
+          '(restock OR preorder OR drop OR live OR "in stock")',
+      ) +
       "&sort=new&t=day",
   },
   {
@@ -70,13 +78,6 @@ export const FEEDS: Feed[] = [
       "https://www.reddit.com/r/PokemonTCGDealsCanada/search.rss?restrict_sr=1&q=" +
       encodeURIComponent("booster box OR elite trainer box OR preorder") +
       "&sort=new&t=week",
-  },
-  {
-    name: "Reddit TCG preorders",
-    url:
-      "https://www.reddit.com/search.rss?q=" +
-      encodeURIComponent('"elite trainer box" OR "booster box" (preorder OR restock)') +
-      "&sort=new&t=day",
   },
 ];
 

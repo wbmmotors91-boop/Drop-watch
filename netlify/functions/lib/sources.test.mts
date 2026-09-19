@@ -147,8 +147,8 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a note per feed", notes.length, 3);
   const reddit = hits.filter((h) => h.url.includes("reddit")).sort((a, b) => a.at - b.at);
   check("both reddit feeds were fetched", reddit.length, 2);
-  check("same host requests are spaced", reddit[1].at - reddit[0].at >= 1000, true);
-  check("different hosts are not serialised behind it", elapsed < 2500, true);
+  check("same host requests are spaced", reddit[1].at - reddit[0].at >= 3800, true);
+  check("different hosts are not serialised behind it", hits.some((h) => !h.url.includes("reddit") && h.at - started < 1000), true);
 
   // An exhausted budget must skip rather than blow the function's 30s limit.
   const lateNotes: string[] = [];
