@@ -405,6 +405,26 @@ export async function pollUpc(
  * This reads the published index, nothing hidden and nothing evaded.
  */
 
+/**
+ * Pull <url> entries with their <lastmod>, when the sitemap carries one.
+ *
+ * A new product URL appearing is a drop. A restock of something already listed
+ * changes no URL at all, so the only hope of noticing one from a sitemap is a
+ * lastmod that moves. Whether Pokémon Center publishes usable ones is a
+ * question about their data, not their code, so this measures before anything
+ * is built on it.
+ */
+export function extractUrlEntries(xml: string): { loc: string; lastmod: string }[] {
+  const out: { loc: string; lastmod: string }[] = [];
+  for (const block of xml.match(/<url\b[\s\S]*?<\/url>/gi) || []) {
+    const loc = block.match(/<loc>\s*([^<\s]+)\s*<\/loc>/i);
+    if (!loc) continue;
+    const mod = block.match(/<lastmod>\s*([^<\s]+)\s*<\/lastmod>/i);
+    out.push({ loc: loc[1].replace(/&amp;/g, "&").trim(), lastmod: mod ? mod[1].trim() : "" });
+  }
+  return out;
+}
+
 export function extractLocs(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) =>
     m[1].replace(/&amp;/g, "&").trim(),
@@ -463,6 +483,10 @@ export type SitemapResult = {
   items: Item[];
   /** The child sitemaps this cycle actually used, worth remembering. */
   children: string[];
+  /** Item key to the lastmod the sitemap gave it, empty string when absent. */
+  lastmods: Record<string, string>;
+  /** How many of the scanned URLs carried a lastmod at all. */
+  withLastmod: number;
 };
 
 function isDisallowed(url: string, disallowed: string[]): boolean {
@@ -489,10 +513,12 @@ async function scanChildren(
   include: string[],
   exclude: string[],
   notes: string[],
-): Promise<Item[]> {
+): Promise<Omit<SitemapResult, "children">> {
   const { maxChildren = 2, disallowed = [], region = "" } = opts;
   const out: Item[] = [];
+  const lastmods: Record<string, string> = {};
   let scanned = 0;
+  let withLastmod = 0;
 
   for (const child of children.slice(0, maxChildren)) {
     if (isDisallowed(child, disallowed)) {
@@ -502,18 +528,21 @@ async function scanChildren(
     try {
       await sleep(SAME_HOST_GAP_MS);
       const xml = await grab(child, 9000);
-      const urls = extractLocs(xml);
-      scanned += urls.length;
-      for (const url of urls) {
-        if (isDisallowed(url, disallowed)) continue;
-        const name = slugWords(url);
+      const entries = extractUrlEntries(xml);
+      scanned += entries.length;
+      for (const { loc, lastmod } of entries) {
+        if (lastmod) withLastmod++;
+        if (isDisallowed(loc, disallowed)) continue;
+        const name = slugWords(loc);
         if (!matches(name, include, exclude)) continue;
+        // Key on the canonical URL so changing region never re-alerts.
+        const key = `pc:${loc}`;
+        lastmods[key] = lastmod;
         out.push({
-          // Key on the canonical URL so changing region never re-alerts.
-          key: `pc:${url}`,
-          title: titleFromUrl(url),
+          key,
+          title: titleFromUrl(loc),
           source: "Pokémon Center",
-          url: regionalise(url, region),
+          url: regionalise(loc, region),
           detail: "listed on Pokémon Center's own sitemap",
         });
       }
@@ -523,7 +552,7 @@ async function scanChildren(
   }
 
   notes.push(`Pokémon Center: ${scanned} URLs scanned, ${out.length} match`);
-  return out;
+  return { items: out, lastmods, withLastmod };
 }
 
 export async function pollSitemap(
@@ -545,10 +574,10 @@ export async function pollSitemap(
     indexXml = await grab(indexUrl, 9000);
   } catch (err) {
     notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
-    if (!knownChildren.length) return { items: [], children: [] };
+    if (!knownChildren.length) return { items: [], children: [], lastmods: {}, withLastmod: 0 };
     notes.push(`Pokémon Center: trying ${knownChildren.length} child sitemaps from an earlier cycle`);
     return {
-      items: await scanChildren(knownChildren, opts, include, exclude, notes),
+      ...(await scanChildren(knownChildren, opts, include, exclude, notes)),
       children: knownChildren,
     };
   }
@@ -558,7 +587,7 @@ export async function pollSitemap(
     notes.push(
       `Pokémon Center: challenged this cycle, standing down until the next one (${describeBody(indexXml)})`,
     );
-    return { items: [], children: [] };
+    return { items: [], children: [], lastmods: {}, withLastmod: 0 };
   }
 
   // Prefer a child sitemap that names itself after products, but do not
@@ -575,7 +604,7 @@ export async function pollSitemap(
   );
 
   return {
-    items: await scanChildren(children, opts, include, exclude, notes),
+    ...(await scanChildren(children, opts, include, exclude, notes)),
     children,
   };
 }

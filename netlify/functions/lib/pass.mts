@@ -60,6 +60,24 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     items = sitemap.items;
     // Remember the child sitemaps so a challenged index does not stop the watch.
     if (sitemap.children.length) pcChildren = sitemap.children;
+
+    // Measure only, for now. A restock changes no URL, so a lastmod that moves
+    // is the one hope of spotting one from a sitemap. Before anything is built
+    // on that, find out whether they publish lastmods and how often they move:
+    // if they churn for every product daily, acting on them would mean over a
+    // thousand notifications a day rather than a useful signal.
+    if (sitemap.items.length) {
+      const previous = await readJson<Record<string, string>>("pcLastmod", {});
+      const now = sitemap.lastmods;
+      const known = Object.keys(now).filter((k) => k in previous);
+      const moved = known.filter((k) => previous[k] !== now[k]);
+      notes.push(
+        sitemap.withLastmod
+          ? `lastmod: ${sitemap.withLastmod} of the scanned URLs carry one, ${moved.length} of ${known.length} known products changed since the last read`
+          : "lastmod: their sitemap publishes none, so restocks cannot be seen this way",
+      );
+      await writeJson("pcLastmod", now);
+    }
   } else if (kind === "news") {
     // Advance the rotation so the Reddit feeds take turns instead of all
     // three asking at once and two of them earning a 429.

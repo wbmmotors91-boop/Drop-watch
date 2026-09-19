@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
+  extractLocs, extractUrlEntries, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
 } from "./sources.mts";
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE,
@@ -503,6 +503,27 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("local sightings get through", local.filter(passes).length, local.length);
   check("a local post naming no store is dropped", passes("Grimsby Costco had booster boxes"), false);
   check("a local post naming no product is dropped", passes("Walmart in Stoney Creek was busy today"), false);
+}
+
+
+// --- lastmod --------------------------------------------------------------
+// A restock changes no URL, so a lastmod that moves is the only thing in a
+// sitemap that could reveal one. Parse it without assuming it is there.
+{
+  console.log("lastmod parsing");
+  const XML = `<?xml version="1.0"?><urlset>
+    <url><loc>https://x/product/1/a-booster-box</loc><lastmod>2026-09-18T10:00:00Z</lastmod></url>
+    <url><loc>https://x/product/2/an-elite-trainer-box</loc></url>
+    <url><lastmod>2026-09-19</lastmod></url>
+  </urlset>`;
+
+  const entries = extractUrlEntries(XML);
+  check("a url with no loc is skipped", entries.length, 2);
+  check("lastmod is read when present", entries[0].lastmod, "2026-09-18T10:00:00Z");
+  check("and is empty when absent", entries[1].lastmod, "");
+  check("the loc still comes through", entries[1].loc, "https://x/product/2/an-elite-trainer-box");
+  check("a sitemap with no lastmods at all parses", extractUrlEntries("<urlset><url><loc>https://x/y</loc></url></urlset>")[0].lastmod, "");
+  check("garbage in", extractUrlEntries("not xml").length, 0);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");
