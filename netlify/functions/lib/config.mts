@@ -49,7 +49,7 @@ export const KEYWORDS_INCLUDE = [
  * this, broadening the net once fires a notification for every one of them.
  * A pass that sees a new version takes the new matches in silently.
  */
-export const KEYWORDS_VERSION = 2;
+export const KEYWORDS_VERSION = 3;
 
 /**
  * News feeds additionally have to say something is actually happening.
@@ -122,6 +122,35 @@ export const STORE_SIGHTING_PRODUCTS = [
   "booster bundle",
 ];
 
+/**
+ * Near enough to drive to.
+ *
+ * Without this gate the feed fills with American online restock bots posting
+ * "in stock at Walmart for $32.99", which is neither in a store nor in this
+ * country. A sighting is only worth reading if it says where it was.
+ */
+export const STORE_SIGHTING_PLACES = [
+  "stoney creek",
+  "stoneycreek",
+  "centennial",
+  "grimsby",
+  "hamilton",
+  "niagara",
+  "burlington",
+  "winona",
+  "ancaster",
+  "dundas",
+  "waterdown",
+  "beamsville",
+  "smithville",
+  "caledonia",
+  "st catharines",
+  "st. catharines",
+  "ontario",
+  "gta",
+  "golden horseshoe",
+];
+
 export const STORE_SIGHTING_STORES = [
   "walmart",
   "superstore",
@@ -180,6 +209,7 @@ export const FEEDS: Feed[] = [
       "&sort=new&t=week",
     include: STORE_SIGHTING_PRODUCTS,
     requireAny: STORE_SIGHTING_STORES,
+    requireAlso: STORE_SIGHTING_PLACES,
   },
 ];
 

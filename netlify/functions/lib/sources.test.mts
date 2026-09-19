@@ -2,7 +2,10 @@ import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
   extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
 } from "./sources.mts";
-import { KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE } from "./config.mts";
+import {
+  KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE,
+  STORE_SIGHTING_PRODUCTS, STORE_SIGHTING_STORES, STORE_SIGHTING_PLACES,
+} from "./config.mts";
 
 let fails = 0;
 const check = (name: string, got: any, want: any) => {
@@ -44,6 +47,10 @@ check("phrase", matches(rss[0].title, inc, exc), true);
 check("excluded", matches(rss[1].title, inc, exc), false);
 check("whole word only", matches("Setback report", ["etb"], []), false);
 check("bare word", matches("Grab the ETB", ["etb"], []), true);
+check("plural of a one-word term", matches("Two ETBs left", ["etb"], []), true);
+check("plural of a phrase", matches("booster bundles are up", ["booster bundle"], []), true);
+check("a longer word is still not a match", matches("Setbacks everywhere", ["etb"], []), false);
+check("s does not run into the next word", matches("tinsel decorations", ["tin"], []), false);
 check("empty include", matches("anything", [], []), true);
 check("case", matches("BOOSTER BOX", inc, exc), true);
 // Terms are normalised before matching, so punctuation is stripped rather
@@ -240,43 +247,64 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
 }
 
 
-// --- a challenged index falls back to the children that worked before ------
-// Imperva answers 200 with a non-sitemap body when it decides to challenge a
-// request. That must not silently stop the watch.
+// --- a challenged index stands down, an errored one falls back ------------
+// Imperva answers 200 with a non-sitemap body when it challenges a request.
+// Asking again straight away is what earns the challenge, so the cycle is
+// abandoned instead. A genuine transport error is different: the host may
+// still serve the child sitemaps we already know about.
 {
   console.log("challenged sitemap index");
   const PRODUCTS = `<?xml version="1.0"?><urlset>
     <url><loc>https://www.pokemoncenter.com/en-ca/product/200-1/mega-charizard-booster-box</loc></url>
   </urlset>`;
   const CHALLENGE = "<html><head><title>Pardon Our Interruption</title></head><body>...</body></html>";
-
+  const known = ["https://www.pokemoncenter.com/sitemaps/products-1.xml"];
   const realFetch = globalThis.fetch;
+
   const asked: string[] = [];
   globalThis.fetch = (async (u: any) => {
-    const url = String(u);
-    asked.push(url);
-    const body = url.includes("products-1") ? PRODUCTS : CHALLENGE;
-    return { ok: true, status: 200, text: async () => body } as any;
+    asked.push(String(u));
+    return { ok: true, status: 200, text: async () => CHALLENGE } as any;
   }) as any;
 
   const notes: string[] = [];
-  const known = ["https://www.pokemoncenter.com/sitemaps/products-1.xml"];
-  const { items, children } = await pollSitemap(
+  const challenged = await pollSitemap(
     { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 1, knownChildren: known },
     ["booster box"],
     [],
     notes,
   );
 
-  check("the index was read twice before giving up", asked.filter((u) => u.endsWith("/sitemap.xml")).length, 2);
-  check("the known child was used anyway", items.length, 1);
-  check("and the fallback is recorded", notes.some((n) => n.includes("falling back")), true);
-  check("the note says what came back", notes.some((n) => n.includes("Pardon Our Interruption")), true);
-  check("children are handed back for next time", children, known);
+  check("the index is read once, not hammered", asked.length, 1);
+  check("nothing is returned from a challenged cycle", challenged.items.length, 0);
+  check("and no children are remembered from it", challenged.children.length, 0);
+  check("the note says it stood down", notes.some((n) => n.includes("standing down")), true);
+  check("and says what came back", notes.some((n) => n.includes("Pardon Our Interruption")), true);
 
-  // With nothing remembered yet there is nothing to fall back to, and the
-  // note must still explain the silence.
+  // A transport error is not a challenge: the remembered children are worth a try.
+  const errNotes: string[] = [];
+  const errAsked: string[] = [];
+  globalThis.fetch = (async (u: any) => {
+    const url = String(u);
+    errAsked.push(url);
+    if (url.endsWith("/sitemap.xml")) return { ok: false, status: 503, text: async () => "" } as any;
+    return { ok: true, status: 200, text: async () => PRODUCTS } as any;
+  }) as any;
+
+  const recovered = await pollSitemap(
+    { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 1, knownChildren: known },
+    ["booster box"],
+    [],
+    errNotes,
+  );
+  check("a failed index falls back to known children", recovered.items.length, 1);
+  check("and keeps them for next time", recovered.children, known);
+  check("the fallback is recorded", errNotes.some((n) => n.includes("from an earlier cycle")), true);
+
+  // With nothing remembered there is nothing to fall back to, and it must
+  // still say why it is empty.
   const coldNotes: string[] = [];
+  globalThis.fetch = (async () => ({ ok: false, status: 503, text: async () => "" }) as any) as any;
   const cold = await pollSitemap(
     { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 1 },
     ["booster box"],
@@ -285,11 +313,10 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   );
   check("no items without a fallback", cold.items.length, 0);
   check("nothing to remember", cold.children.length, 0);
-  check("but it says why", coldNotes.some((n) => n.includes("gave no child sitemaps")), true);
+  check("but it says why", coldNotes.some((n) => n.includes("HTTP 503")), true);
 
   globalThis.fetch = realFetch;
 }
-
 
 // --- per-feed gates -------------------------------------------------------
 // The shelf-sighting feed asks a different question than the news feeds, so a
@@ -421,6 +448,38 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   const wrongly = dont.filter((t) => matches(t, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE));
   check("every sealed product is caught", missed, []);
   check("no merchandise gets through", wrongly, []);
+}
+
+
+// --- shelf sightings must be somewhere he can drive to --------------------
+// These titles are real, taken from what the feed actually pulled in. Almost
+// all of them are American online restock bots, which is exactly the "late and
+// wrong" chatter he did not want. A sighting has to name a place.
+{
+  console.log("sighting location gate");
+  const passes = (text: string) =>
+    matches(text, STORE_SIGHTING_PRODUCTS, KEYWORDS_EXCLUDE) &&
+    matches(text, STORE_SIGHTING_STORES, []) &&
+    matches(text, STORE_SIGHTING_PLACES, []);
+
+  const online = [
+    "Pokemon Trainers Toolkit 2025 is in stock at Walmart for $32.99 (Less than MSRP)",
+    "WALMART POKEMON RESTOCK ALERT: Pokemon Z-A NS2 + Trading Cards N - $93.97",
+    "Pokemon First Partner Illustration Collection Series 3 is in stock at Walmart for $17.97",
+    "Pokemon 30th Celebration Elite Trainer Box is in stock at Walmart for $69.97",
+    "Walmart Pokémon Restock | Collectible POKEMON 30TH ANNIVERSARY ELITE TRAINER BOX",
+  ];
+  const local = [
+    "Walmart Stoney Creek on Centennial just put out 30th Celebration ETBs",
+    "Grimsby Superstore has booster bundles on the shelf right now",
+    "Heads up Hamilton, Walmart restocked elite trainer boxes this morning",
+    "Niagara Walmart had a pallet of booster boxes go out",
+  ];
+
+  check("American restock bots are dropped", online.filter(passes), []);
+  check("local sightings get through", local.filter(passes).length, local.length);
+  check("a local post naming no store is dropped", passes("Grimsby Costco had booster boxes"), false);
+  check("a local post naming no product is dropped", passes("Walmart in Stoney Creek was busy today"), false);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");

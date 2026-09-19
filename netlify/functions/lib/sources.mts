@@ -146,7 +146,9 @@ export function matches(text: string, include: string[], exclude: string[] = [])
     if (!needle) continue;
     if (needle.includes(" ")) {
       if (norm.includes(needle)) return true;
-    } else if (new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(norm)) {
+      // A trailing s, because people write "ETBs" and "tins" and a term that
+      // only matches the singular quietly misses them.
+    } else if (new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`).test(norm)) {
       return true;
     }
   }
@@ -187,6 +189,12 @@ export type Feed = {
   include?: string[];
   /** Replaces the shared "something is happening" gate for this feed alone. */
   requireAny?: string[];
+  /**
+   * A further gate this feed's items must also pass. Used to insist a shelf
+   * sighting names somewhere near enough to drive to, which is what separates
+   * a useful sighting from an American restock bot.
+   */
+  requireAlso?: string[];
   /**
    * Feeds sharing a rotation group are read one per cycle, round-robin,
    * rather than all of them every cycle. Reddit rate-limits by address and
@@ -295,9 +303,12 @@ export async function pollFeeds(
         // a product at one of the stores he can actually drive to".
         const feedInclude = feed.include ?? include;
         const feedRequire = feed.requireAny ?? requireAny;
+        const feedAlso = feed.requireAlso;
         const hits = parseFeed(xml, feed.name).filter((item) => {
           const text = `${item.title} ${item.detail || ""}`;
-          return matches(text, feedInclude, exclude) && matches(text, feedRequire, []);
+          if (!matches(text, feedInclude, exclude)) return false;
+          if (!matches(text, feedRequire, [])) return false;
+          return !feedAlso || matches(text, feedAlso, []);
         });
         notes.push(`${feed.name}: ${hits.length} match`);
         found.push(...hits);
@@ -523,34 +534,31 @@ export async function pollSitemap(
 ): Promise<SitemapResult> {
   const { indexUrl, childPattern = "product", knownChildren = [] } = opts;
 
-  // A 200 with no sitemap in it is what Imperva serves when it decides to
-  // challenge a request, and it clears on its own. Read the index twice
-  // before believing it, and if it still says nothing, fall back to the
-  // child sitemaps that worked last time rather than going quiet.
+  // A 200 with no sitemap in it is what Imperva serves when it challenges a
+  // request. Asking again straight away is what got us challenged in the
+  // first place, so read the index once per cycle and stand down when it says
+  // nothing. The next cycle is five minutes away and costs nothing to wait
+  // for. The remembered children are only worth trying when the index itself
+  // errored, because a challenge applies to the whole host.
   let indexXml = "";
-  let allChildren: string[] = [];
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) await sleep(SAME_HOST_GAP_MS);
-    try {
-      indexXml = await grab(indexUrl, 9000);
-    } catch (err) {
-      notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
-      break;
-    }
-    allChildren = extractLocs(indexXml);
-    if (allChildren.length) break;
-  }
-
-  if (!allChildren.length) {
-    if (indexXml) {
-      notes.push(`Pokémon Center sitemap: the index gave no child sitemaps (${describeBody(indexXml)})`);
-    }
+  try {
+    indexXml = await grab(indexUrl, 9000);
+  } catch (err) {
+    notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
     if (!knownChildren.length) return { items: [], children: [] };
-    notes.push(`Pokémon Center: falling back to ${knownChildren.length} child sitemaps from an earlier cycle`);
+    notes.push(`Pokémon Center: trying ${knownChildren.length} child sitemaps from an earlier cycle`);
     return {
       items: await scanChildren(knownChildren, opts, include, exclude, notes),
       children: knownChildren,
     };
+  }
+
+  const allChildren = extractLocs(indexXml);
+  if (!allChildren.length) {
+    notes.push(
+      `Pokémon Center: challenged this cycle, standing down until the next one (${describeBody(indexXml)})`,
+    );
+    return { items: [], children: [] };
   }
 
   // Prefer a child sitemap that names itself after products, but do not
