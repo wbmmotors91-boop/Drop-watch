@@ -18,6 +18,9 @@ import { addItems, pruneItems, pushAll, readJson, writeJson, type Meta } from ".
 
 const MAX_KEYS_PER_SOURCE = 800;
 
+/** How long Pokémon Center's robots.txt is trusted before re-reading it. */
+const ROBOTS_MAX_AGE_MS = 60 * 60 * 1000;
+
 export type PassResult = {
   checked: string[];
   found: number;
@@ -33,16 +36,27 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let items: Item[] = [];
   let pcChildren: string[] | undefined;
   let newsCursor: number | undefined;
+  let robots: { rules: string[]; at: number } | undefined;
 
   if (kind === "pc") {
-    // Read their rules before their data, and obey whatever they say.
+    // Read their rules before their data, and obey whatever they say. Their
+    // rules do not change minute to minute, so re-reading them on every check
+    // is just another request against their server; an hour is fresh enough
+    // to notice a change long before it matters.
+    const priorMeta = await readJson<Meta>("meta", {});
+    const cached = priorMeta.robots;
     let disallowed: string[] = [];
-    try {
-      disallowed = parseDisallowed(await grab(POKEMON_CENTER.robotsUrl, 8000));
-    } catch (err) {
-      notes.push(`Pokémon Center robots.txt: ${String(err).slice(0, 60)}`);
-      notes.push("skipping the sitemap this cycle rather than guessing the rules");
-      return { checked: ["Pokémon Center"], found: 0, notified: 0, seeded: false, notes };
+    if (cached && Date.now() - cached.at < ROBOTS_MAX_AGE_MS) {
+      disallowed = cached.rules;
+    } else {
+      try {
+        disallowed = parseDisallowed(await grab(POKEMON_CENTER.robotsUrl, 8000));
+        robots = { rules: disallowed, at: Date.now() };
+      } catch (err) {
+        notes.push(`Pokémon Center robots.txt: ${String(err).slice(0, 60)}`);
+        notes.push("skipping the sitemap this cycle rather than guessing the rules");
+        return { checked: ["Pokémon Center"], found: 0, notified: 0, seeded: false, notes };
+      }
     }
     const sitemap = await pollSitemap(
       {
@@ -51,7 +65,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         maxChildren: POKEMON_CENTER.maxChildren,
         region: POKEMON_CENTER.region,
         disallowed,
-        knownChildren: (await readJson<Meta>("meta", {})).pcChildren || [],
+        knownChildren: priorMeta.pcChildren || [],
         validators: await readJson<Record<string, { etag: string; lastModified: string }>>(
           "pcValidators",
           {},
@@ -71,23 +85,30 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       await writeJson("pcValidators", sitemap.validators);
     }
 
-    // Measure only, for now. A restock changes no URL, so a lastmod that moves
-    // is the one hope of spotting one from a sitemap. Before anything is built
-    // on that, find out whether they publish lastmods and how often they move:
-    // if they churn for every product daily, acting on them would mean over a
-    // thousand notifications a day rather than a useful signal.
-    if (sitemap.items.length) {
+    // Does their list track stock at all?
+    //
+    // A restock is invisible if the product URL simply stays put. But some
+    // stores drop sold-out products from their sitemap and re-add them when
+    // stock returns, and if Pokémon Center does that, a restock already looks
+    // like a new arrival and is already caught. Watching what leaves the list
+    // is the only way to tell which world we are in, and it costs nothing.
+    if (!sitemap.allUnchanged && sitemap.items.length) {
       const previous = await readJson<Record<string, string>>("pcLastmod", {});
+      const before = Object.keys(previous);
       const now = sitemap.lastmods;
-      const known = Object.keys(now).filter((k) => k in previous);
-      const moved = known.filter((k) => previous[k] !== now[k]);
-      notes.push(
-        sitemap.withLastmod
-          ? `lastmod: ${sitemap.withLastmod} of the scanned URLs carry one, ${moved.length} of ${known.length} known products changed since the last read`
-          : "lastmod: their sitemap publishes none, so restocks cannot be seen this way",
-      );
+      const added = Object.keys(now).filter((k) => !(k in previous));
+      const removed = before.filter((k) => !(k in now));
+      if (before.length) {
+        notes.push(
+          `list changed: ${added.length} added, ${removed.length} removed, ${Object.keys(now).length} total`,
+        );
+        if (removed.length) {
+          notes.push(`left the list: ${removed.slice(0, 3).map((k) => k.split("/").pop()).join(", ")}`);
+        }
+      }
       await writeJson("pcLastmod", now);
     }
+
   } else if (kind === "news") {
     // Advance the rotation so the Reddit feeds take turns instead of all
     // three asking at once and two of them earning a 429.
@@ -179,6 +200,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     keywordsVersionByKind: { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION },
     ...(pcChildren ? { pcChildren } : {}),
     ...(newsCursor === undefined ? {} : { newsCursor }),
+    ...(robots ? { robots } : {}),
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
     ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });

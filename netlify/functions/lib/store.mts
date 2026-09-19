@@ -16,6 +16,8 @@ export type Meta = {
    * whichever pass runs first must not clear the flag for the others.
    */
   keywordsVersionByKind?: Record<string, number>;
+  /** Cached robots.txt rules, so a one-minute cadence does not re-read them. */
+  robots?: { rules: string[]; at: number };
   seeded?: boolean;
   lastPoll?: number;
   lastUpcPoll?: number;

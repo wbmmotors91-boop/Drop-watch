@@ -633,7 +633,7 @@ export async function pollSitemap(
   exclude: string[],
   notes: string[],
 ): Promise<SitemapResult> {
-  const { indexUrl, childPattern = "product", knownChildren = [] } = opts;
+  const { indexUrl, childPattern = "product", knownChildren = [], validators = {} } = opts;
 
   // A 200 with no sitemap in it is what Imperva serves when it challenges a
   // request. Asking again straight away is what got us challenged in the
@@ -642,8 +642,14 @@ export async function pollSitemap(
   // for. The remembered children are only worth trying when the index itself
   // errored, because a challenge applies to the whole host.
   let indexXml = "";
+  let indexUnchanged = false;
+  const nextIndexValidator = { etag: "", lastModified: "" };
   try {
-    indexXml = await grab(indexUrl, 9000);
+    const got = await grabConditional(indexUrl, 9000, 1, validators[indexUrl] || {});
+    indexXml = got.body;
+    indexUnchanged = got.unchanged;
+    nextIndexValidator.etag = got.etag || validators[indexUrl]?.etag || "";
+    nextIndexValidator.lastModified = got.lastModified || validators[indexUrl]?.lastModified || "";
   } catch (err) {
     notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
     if (!knownChildren.length)
@@ -652,6 +658,21 @@ export async function pollSitemap(
     return {
       ...(await scanChildren(knownChildren, opts, include, exclude, notes)),
       children: knownChildren,
+    };
+  }
+
+  // An unchanged index means the same child sitemaps as last time, so there is
+  // nothing to re-parse and no reason to ask for it again.
+  if (indexUnchanged) {
+    if (!knownChildren.length) {
+      notes.push("Pokémon Center: index unchanged but no child sitemaps remembered yet");
+      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false };
+    }
+    const scanned = await scanChildren(knownChildren, opts, include, exclude, notes);
+    return {
+      ...scanned,
+      children: knownChildren,
+      validators: { ...scanned.validators, [indexUrl]: nextIndexValidator },
     };
   }
 
@@ -676,9 +697,11 @@ export async function pollSitemap(
       .join(", ")}]`,
   );
 
+  const scanned = await scanChildren(children, opts, include, exclude, notes);
   return {
-    ...(await scanChildren(children, opts, include, exclude, notes)),
+    ...scanned,
     children,
+    validators: { ...scanned.validators, [indexUrl]: nextIndexValidator },
   };
 }
 
