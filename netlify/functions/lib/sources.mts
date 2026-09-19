@@ -183,33 +183,72 @@ export function extractProducts(html: string, pattern: string, base: string): [s
 export type Feed = { name: string; url: string };
 export type Retailer = { name: string; url: string; pattern: string };
 
+/** Gap between two requests to the same host, to stay under rate limits. */
+const SAME_HOST_GAP_MS = 1100;
+
+function hostOf(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
+ * Poll a list of feeds.
+ *
+ * Requests to different hosts run in parallel, but requests to the SAME host
+ * run one at a time with a gap. Firing three Reddit feeds simultaneously is
+ * what earned us 429s; spaced out, they answer.
+ *
+ * `budgetMs` stops a slow host eating the scheduled function's 30 seconds:
+ * once it is spent, the remaining feeds for that host are skipped and say so
+ * rather than the whole run timing out.
+ */
 export async function pollFeeds(
   feeds: Feed[],
   include: string[],
   exclude: string[],
   notes: string[],
   requireAny: string[] = [],
+  budgetMs = 20000,
 ): Promise<Item[]> {
-  const results = await Promise.allSettled(
-    feeds.map(async (f) => {
-      const xml = await grab(f.url);
-      return parseFeed(xml, f.name).filter((i) => {
-        const text = `${i.title} ${i.detail || ""}`;
-        // Must name a product AND say something is happening to it.
-        return matches(text, include, exclude) && matches(text, requireAny, []);
-      });
-    }),
-  );
-  const out: Item[] = [];
-  results.forEach((r, i) => {
-    if (r.status === "fulfilled") {
-      notes.push(`${feeds[i].name}: ${r.value.length} match`);
-      out.push(...r.value);
-    } else {
-      notes.push(`${feeds[i].name}: ${String(r.reason).slice(0, 60)}`);
+  const deadline = Date.now() + budgetMs;
+
+  const byHost = new Map<string, Feed[]>();
+  for (const f of feeds) {
+    const host = hostOf(f.url);
+    const list = byHost.get(host);
+    if (list) list.push(f);
+    else byHost.set(host, [f]);
+  }
+
+  const perHost = [...byHost.values()].map(async (group) => {
+    const found: Item[] = [];
+    for (let i = 0; i < group.length; i++) {
+      const feed = group[i];
+      if (Date.now() >= deadline) {
+        notes.push(`${feed.name}: skipped, out of time this cycle`);
+        continue;
+      }
+      if (i > 0) await sleep(SAME_HOST_GAP_MS);
+      try {
+        const xml = await grab(feed.url, 6000);
+        const hits = parseFeed(xml, feed.name).filter((item) => {
+          const text = `${item.title} ${item.detail || ""}`;
+          // Must name a product AND say something is happening to it.
+          return matches(text, include, exclude) && matches(text, requireAny, []);
+        });
+        notes.push(`${feed.name}: ${hits.length} match`);
+        found.push(...hits);
+      } catch (err) {
+        notes.push(`${feed.name}: ${String(err).slice(0, 60)}`);
+      }
     }
+    return found;
   });
-  return out;
+
+  return (await Promise.all(perHost)).flat();
 }
 
 export async function pollRetailers(

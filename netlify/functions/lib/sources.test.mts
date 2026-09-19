@@ -1,4 +1,4 @@
-import { parseFeed, matches, extractProducts, stripHtml, grab } from "./sources.mts";
+import { parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds } from "./sources.mts";
 
 let fails = 0;
 const check = (name: string, got: any, want: any) => {
@@ -116,5 +116,54 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   globalThis.fetch = realFetch;
 }
 
-console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries)");
+// --- pollFeeds host staggering -------------------------------------------
+{
+  console.log("pollFeeds staggering");
+  const realFetch = globalThis.fetch;
+  const hits: { url: string; at: number }[] = [];
+  const FEED = '<rss><item><title>Elite Trainer Box preorder live</title><link>L</link><guid>G</guid></item></rss>';
+
+  globalThis.fetch = (async (u: any) => {
+    hits.push({ url: String(u), at: Date.now() });
+    return { ok: true, status: 200, text: async () => FEED } as any;
+  }) as any;
+
+  const notes: string[] = [];
+  const started = Date.now();
+  const items = await pollFeeds(
+    [
+      { name: "reddit A", url: "https://www.reddit.com/a.rss" },
+      { name: "reddit B", url: "https://www.reddit.com/b.rss" },
+      { name: "other", url: "https://example.com/c.rss" },
+    ],
+    ["elite trainer box"],
+    [],
+    notes,
+    ["preorder"],
+  );
+  const elapsed = Date.now() - started;
+
+  check("every feed produced an item", items.length, 3);
+  check("a note per feed", notes.length, 3);
+  const reddit = hits.filter((h) => h.url.includes("reddit")).sort((a, b) => a.at - b.at);
+  check("both reddit feeds were fetched", reddit.length, 2);
+  check("same host requests are spaced", reddit[1].at - reddit[0].at >= 1000, true);
+  check("different hosts are not serialised behind it", elapsed < 2500, true);
+
+  // An exhausted budget must skip rather than blow the function's 30s limit.
+  const lateNotes: string[] = [];
+  await pollFeeds(
+    [{ name: "too late", url: "https://www.reddit.com/z.rss" }],
+    ["elite trainer box"],
+    [],
+    lateNotes,
+    ["preorder"],
+    -1,
+  );
+  check("out of budget skips with a note", lateNotes[0], "too late: skipped, out of time this cycle");
+
+  globalThis.fetch = realFetch;
+}
+
+console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering)");
 process.exit(fails ? 1 : 0);
