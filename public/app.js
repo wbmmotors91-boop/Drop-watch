@@ -30,11 +30,17 @@ async function api(path, opts) {
   return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-function renderFeed(items) {
+function renderFeed(items, watchedCount) {
   const feed = $("feed");
   if (!items.length) {
+    // An empty list is the normal state between drops, and saying how many
+    // products are being watched is the difference between "nothing new" and
+    // "this thing is broken".
+    const watched = watchedCount
+      ? ` ${watchedCount.toLocaleString()} products are on the watch list.`
+      : "";
     feed.innerHTML =
-      '<li class="empty">Nothing yet. The first check runs within five minutes, and the very first one stays quiet so you are not buried in alerts for things that already exist.</li>';
+      `<li class="empty">Nothing new since the last check.${watched} This list only shows products that appeared on Pokémon Center after you started watching, so it stays empty until something actually drops.</li>`;
     return;
   }
   feed.innerHTML = items
@@ -64,7 +70,7 @@ async function loadState() {
     return;
   }
   state.publicKey = body.publicKey || "";
-  renderFeed(body.items || []);
+  renderFeed(body.items || [], body.watchedCount || 0);
   // Say plainly which sources can buzz the phone. The shelf sightings are
   // people posting what they saw, so they belong in the list to read but must
   // never look like something that will wake you up.

@@ -39,7 +39,11 @@ export default async (req: Request, _context: Context) => {
       // So the app can show which sources are allowed to buzz him and which
       // are only there to read.
       pushSources: PUSH_SOURCES,
-      items: items.slice(0, 60),
+      // Only genuine arrivals. Everything else is the back catalogue: it is
+      // what Pokémon Center already sells, with no stock status attached, and
+      // showing it as a find is what put sold-out tins on his screen.
+      items: items.filter((i) => !i.catalogue).slice(0, 60),
+      watchedCount: items.length,
       lastPoll: meta.lastPoll || null,
       lastUpcPoll: meta.lastUpcPoll || null,
       lastPcPoll: meta.lastPcPoll || null,

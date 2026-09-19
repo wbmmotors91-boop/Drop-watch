@@ -15,6 +15,13 @@ export type Item = {
   upc?: string;
   detail?: string;
   found?: number;
+  /**
+   * True when the entry was taken in quietly: the first seed, or a widened
+   * keyword list matching products that were already on the shelf. It is new
+   * to us, not new to the store, so it belongs in the known list rather than
+   * in "what just appeared".
+   */
+  catalogue?: boolean;
 };
 
 const UA =

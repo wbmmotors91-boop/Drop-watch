@@ -52,6 +52,13 @@ export const KEYWORDS_INCLUDE = [
 export const KEYWORDS_VERSION = 6;
 
 /**
+ * Bumped when the stored feed has to be re-judged. Version 1 is the first run
+ * that tells a new arrival apart from a product that was simply on the shelf
+ * when we started looking.
+ */
+export const CATALOGUE_VERSION = 1;
+
+/**
  * News feeds additionally have to say something is actually happening.
  *
  * Without this a subreddit's ordinary chatter about elite trainer boxes fires
