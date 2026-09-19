@@ -1,7 +1,7 @@
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { grab, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc } from "./sources.mjs";
+import { grab, matches, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc } from "./sources.mjs";
 import {
   FEEDS,
   KEYWORDS_EXCLUDE,
@@ -14,7 +14,7 @@ import {
   RETAILERS,
   UPC_QUERIES,
 } from "./config.mjs";
-import { addItems, pushAll, readJson, writeJson, type Meta } from "./store.mjs";
+import { addItems, pruneItems, pushAll, readJson, writeJson, type Meta } from "./store.mjs";
 
 const MAX_KEYS_PER_SOURCE = 800;
 
@@ -117,6 +117,15 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     notes.push(
       `the product list changed, so ${fresh.length} newly matching entries were added without notifying`,
     );
+  }
+
+  // The rules changed, so anything the old ones let through has to go, or a
+  // tightened list leaves its mistakes sitting in the feed forever.
+  if (keywordsWidened && kind === "pc") {
+    const dropped = await pruneItems("Pokémon Center", (title) =>
+      matches(title, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE),
+    );
+    if (dropped) notes.push(`${dropped} entries no longer match and were removed from the feed`);
   } else if (fresh.length) {
     // Everything lands in the app; only the authoritative sources buzz.
     const worthPushing = fresh.filter((i) => PUSH_SOURCES.includes(i.source));

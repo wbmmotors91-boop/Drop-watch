@@ -1,4 +1,4 @@
-import { env } from "./store.mjs";
+import { env, itemsAfterPrune } from "./store.mjs";
 
 let fails = 0;
 const check = (n: string, got: any, want: any) => {
@@ -20,6 +20,25 @@ check("global miss uses process.env", env("PC_TEST_OTHER"), "only-in-process");
 
 (globalThis as any).Netlify = { env: { get: () => { throw new Error("boom"); } } };
 check("throwing global does not break it", env("PC_TEST"), "from-process");
+
+
+// --- pruning ---------------------------------------------------------------
+// Tightening the keywords has to clear out what the looser rules let through,
+// without touching sources that passed different gates entirely.
+{
+  console.log("itemsAfterPrune");
+  const items = [
+    { key: "a", title: "Pokemon Tcg 30th Celebration Elite Trainer Box", source: "Pokémon Center", url: "u" },
+    { key: "b", title: "Poke Ball Pattern Crew Socks Box Set", source: "Pokémon Center", url: "u" },
+    { key: "c", title: "Walmart Stoney Creek put out ETBs", source: "Walmart & Superstore sightings", url: "u" },
+  ] as any[];
+  const keep = (t: string) => !t.toLowerCase().includes("socks");
+
+  const out = itemsAfterPrune(items, "Pokémon Center", keep);
+  check("the socks are gone", out.map((i: any) => i.key), ["a", "c"]);
+  check("another source is untouched", out.some((i: any) => i.source.includes("sightings")), true);
+  check("nothing to drop leaves it alone", itemsAfterPrune(items, "Nobody", keep).length, 3);
+}
 
 console.log(fails ? `\n${fails} failed` : "\nall passed");
 process.exit(fails ? 1 : 0);

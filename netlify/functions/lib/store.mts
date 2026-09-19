@@ -60,6 +60,34 @@ export async function writeJson(key: string, value: unknown): Promise<void> {
 }
 
 /** Newest first, capped, deduped by key. */
+/**
+ * Drop stored entries that the current rules would no longer accept.
+ *
+ * Tightening the keywords only stops new matches; whatever the looser rules
+ * already let through stays in the feed until something removes it. Without
+ * this, excluding socks leaves the socks on screen.
+ */
+export function itemsAfterPrune(
+  items: Item[],
+  source: string,
+  keep: (title: string) => boolean,
+): Item[] {
+  // Only the named source is judged. Other sources passed different gates to
+  // get here and must not be deleted by this one's rules.
+  return items.filter((i) => i.source !== source || keep(i.title));
+}
+
+export async function pruneItems(
+  source: string,
+  keep: (title: string) => boolean,
+): Promise<number> {
+  const existing = await readJson<Item[]>("items", []);
+  const kept = itemsAfterPrune(existing, source, keep);
+  const dropped = existing.length - kept.length;
+  if (dropped) await writeJson("items", kept);
+  return dropped;
+}
+
 export async function addItems(fresh: Item[]): Promise<Item[]> {
   const now = Date.now();
   const existing = await readJson<Item[]>("items", []);

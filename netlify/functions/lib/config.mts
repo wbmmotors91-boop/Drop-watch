@@ -49,7 +49,7 @@ export const KEYWORDS_INCLUDE = [
  * this, broadening the net once fires a notification for every one of them.
  * A pass that sees a new version takes the new matches in silently.
  */
-export const KEYWORDS_VERSION = 4;
+export const KEYWORDS_VERSION = 5;
 
 /**
  * News feeds additionally have to say something is actually happening.
