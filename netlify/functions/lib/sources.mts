@@ -35,7 +35,26 @@ function worthRetrying(status: number): boolean {
  * leash and gets at most one retry. Reddit in particular rate-limits hosted
  * IPs and then serves the same feed happily a second later.
  */
-export async function grab(url: string, ms = 7000, retries = 1): Promise<string> {
+export type Fetched = {
+  body: string;
+  /** Validators the server offered, for asking "changed?" cheaply next time. */
+  etag: string;
+  lastModified: string;
+  /** True when the server answered 304, meaning nothing changed. */
+  unchanged: boolean;
+};
+
+/**
+ * Fetch, optionally asking the server whether anything has changed since last
+ * time. A 304 costs both sides almost nothing, which is what makes checking
+ * often defensible rather than rude.
+ */
+export async function grabConditional(
+  url: string,
+  ms = 7000,
+  retries = 1,
+  validators: { etag?: string; lastModified?: string } = {},
+): Promise<Fetched> {
   let lastError: Error = new Error("never attempted");
 
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -43,12 +62,21 @@ export async function grab(url: string, ms = 7000, retries = 1): Promise<string>
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), ms);
     try {
-      const res = await fetch(url, {
-        signal: ctl.signal,
-        headers: { "User-Agent": UA, Accept: "*/*", "Accept-Language": "en-CA,en;q=0.9" },
-        redirect: "follow",
-      });
-      if (res.ok) return await res.text();
+      const headers: Record<string, string> = {
+        "User-Agent": UA,
+        Accept: "*/*",
+        "Accept-Language": "en-CA,en;q=0.9",
+      };
+      if (validators.etag) headers["If-None-Match"] = validators.etag;
+      if (validators.lastModified) headers["If-Modified-Since"] = validators.lastModified;
+
+      const res = await fetch(url, { signal: ctl.signal, headers, redirect: "follow" });
+      const etag = res.headers?.get("etag") || "";
+      const lastModified = res.headers?.get("last-modified") || "";
+
+      if (res.status === 304) return { body: "", etag, lastModified, unchanged: true };
+      if (res.ok) return { body: await res.text(), etag, lastModified, unchanged: false };
+
       lastError = new Error(`HTTP ${res.status}`);
       if (!worthRetrying(res.status)) break;
     } catch (err) {
@@ -59,6 +87,10 @@ export async function grab(url: string, ms = 7000, retries = 1): Promise<string>
   }
 
   throw lastError;
+}
+
+export async function grab(url: string, ms = 7000, retries = 1): Promise<string> {
+  return (await grabConditional(url, ms, retries)).body;
 }
 
 export function stripHtml(s: string): string {
@@ -477,6 +509,12 @@ export type SitemapOptions = {
    * freshness rather than silently stopping the whole watch.
    */
   knownChildren?: string[];
+  /**
+   * Per child sitemap, what the server last told us identifies its content.
+   * Sent back as If-None-Match / If-Modified-Since so an unchanged list costs
+   * a 304 instead of thirty-four thousand URLs.
+   */
+  validators?: Record<string, { etag: string; lastModified: string }>;
 };
 
 export type SitemapResult = {
@@ -487,6 +525,10 @@ export type SitemapResult = {
   lastmods: Record<string, string>;
   /** How many of the scanned URLs carried a lastmod at all. */
   withLastmod: number;
+  /** The validators to send next time, per child sitemap. */
+  validators: Record<string, { etag: string; lastModified: string }>;
+  /** True when every child answered 304, so nothing was re-read. */
+  allUnchanged: boolean;
 };
 
 function isDisallowed(url: string, disallowed: string[]): boolean {
@@ -514,11 +556,14 @@ async function scanChildren(
   exclude: string[],
   notes: string[],
 ): Promise<Omit<SitemapResult, "children">> {
-  const { maxChildren = 2, disallowed = [], region = "" } = opts;
+  const { maxChildren = 2, disallowed = [], region = "", validators = {} } = opts;
   const out: Item[] = [];
   const lastmods: Record<string, string> = {};
+  const nextValidators: Record<string, { etag: string; lastModified: string }> = {};
   let scanned = 0;
   let withLastmod = 0;
+  let read = 0;
+  let unchanged = 0;
 
   for (const child of children.slice(0, maxChildren)) {
     if (isDisallowed(child, disallowed)) {
@@ -527,8 +572,18 @@ async function scanChildren(
     }
     try {
       await sleep(SAME_HOST_GAP_MS);
-      const xml = await grab(child, 9000);
-      const entries = extractUrlEntries(xml);
+      const got = await grabConditional(child, 9000, 1, validators[child] || {});
+      nextValidators[child] = { etag: got.etag, lastModified: got.lastModified };
+
+      if (got.unchanged) {
+        unchanged++;
+        // Carry the previous validators forward: a 304 need not repeat them.
+        if (!got.etag && !got.lastModified) nextValidators[child] = validators[child];
+        continue;
+      }
+      read++;
+
+      const entries = extractUrlEntries(got.body);
       scanned += entries.length;
       for (const { loc, lastmod } of entries) {
         if (lastmod) withLastmod++;
@@ -551,8 +606,25 @@ async function scanChildren(
     }
   }
 
-  notes.push(`Pokémon Center: ${scanned} URLs scanned, ${out.length} match`);
-  return { items: out, lastmods, withLastmod };
+  const offered = Object.values(nextValidators).filter((v) => v && (v.etag || v.lastModified)).length;
+  if (unchanged && !read) {
+    notes.push(`Pokémon Center: unchanged since the last check, nothing re-read`);
+  } else {
+    notes.push(`Pokémon Center: ${scanned} URLs scanned, ${out.length} match`);
+  }
+  notes.push(
+    offered
+      ? `conditional requests: supported, ${offered} child sitemap(s) gave a validator`
+      : "conditional requests: not supported, the whole list must be read each time",
+  );
+
+  return {
+    items: out,
+    lastmods,
+    withLastmod,
+    validators: nextValidators,
+    allUnchanged: unchanged > 0 && read === 0,
+  };
 }
 
 export async function pollSitemap(
@@ -574,7 +646,8 @@ export async function pollSitemap(
     indexXml = await grab(indexUrl, 9000);
   } catch (err) {
     notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
-    if (!knownChildren.length) return { items: [], children: [], lastmods: {}, withLastmod: 0 };
+    if (!knownChildren.length)
+      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false };
     notes.push(`Pokémon Center: trying ${knownChildren.length} child sitemaps from an earlier cycle`);
     return {
       ...(await scanChildren(knownChildren, opts, include, exclude, notes)),
@@ -587,7 +660,7 @@ export async function pollSitemap(
     notes.push(
       `Pokémon Center: challenged this cycle, standing down until the next one (${describeBody(indexXml)})`,
     );
-    return { items: [], children: [], lastmods: {}, withLastmod: 0 };
+    return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false };
   }
 
   // Prefer a child sitemap that names itself after products, but do not

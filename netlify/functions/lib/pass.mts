@@ -52,6 +52,10 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         region: POKEMON_CENTER.region,
         disallowed,
         knownChildren: (await readJson<Meta>("meta", {})).pcChildren || [],
+        validators: await readJson<Record<string, { etag: string; lastModified: string }>>(
+          "pcValidators",
+          {},
+        ),
       },
       KEYWORDS_INCLUDE,
       KEYWORDS_EXCLUDE,
@@ -60,6 +64,12 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     items = sitemap.items;
     // Remember the child sitemaps so a challenged index does not stop the watch.
     if (sitemap.children.length) pcChildren = sitemap.children;
+
+    // Remember what the server said identifies the list, so the next check can
+    // ask "changed?" instead of downloading it again.
+    if (Object.keys(sitemap.validators).length) {
+      await writeJson("pcValidators", sitemap.validators);
+    }
 
     // Measure only, for now. A restock changes no URL, so a lastmod that moves
     // is the one hope of spotting one from a sitemap. Before anything is built

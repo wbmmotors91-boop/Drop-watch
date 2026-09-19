@@ -526,5 +526,75 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("garbage in", extractUrlEntries("not xml").length, 0);
 }
 
+
+// --- conditional requests -------------------------------------------------
+// Checking often is only defensible if an unchanged list costs a 304 rather
+// than thirty-four thousand URLs. A 304 must mean "nothing new", not "empty".
+{
+  console.log("conditional sitemap requests");
+  const INDEX = `<?xml version="1.0"?><sitemapindex><sitemap><loc>https://www.pokemoncenter.com/sitemaps/products.xml</loc></sitemap></sitemapindex>`;
+  const PRODUCTS = `<?xml version="1.0"?><urlset>
+    <url><loc>https://www.pokemoncenter.com/en-ca/product/1/a-booster-box</loc></url>
+  </urlset>`;
+  const realFetch = globalThis.fetch;
+  const sent: Record<string, string>[] = [];
+
+  // First read: the server offers an ETag.
+  globalThis.fetch = (async (u: any, init: any) => {
+    const url = String(u);
+    sent.push(init?.headers || {});
+    const body = url.includes("products") ? PRODUCTS : INDEX;
+    return {
+      ok: true,
+      status: 200,
+      text: async () => body,
+      headers: { get: (h: string) => (h.toLowerCase() === "etag" ? '"v1"' : "") },
+    } as any;
+  }) as any;
+
+  const first = await pollSitemap(
+    { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 1 },
+    ["booster box"],
+    [],
+    [],
+  );
+  const child = "https://www.pokemoncenter.com/sitemaps/products.xml";
+  check("the product was read", first.items.length, 1);
+  check("the validator was kept", first.validators[child].etag, '"v1"');
+
+  // Second read: the same ETag comes back, so the server answers 304.
+  const conditional: Record<string, string>[] = [];
+  globalThis.fetch = (async (u: any, init: any) => {
+    const url = String(u);
+    conditional.push(init?.headers || {});
+    if (url.includes("products")) {
+      return { ok: false, status: 304, text: async () => "", headers: { get: () => "" } } as any;
+    }
+    return { ok: true, status: 200, text: async () => INDEX, headers: { get: () => "" } } as any;
+  }) as any;
+
+  const notes: string[] = [];
+  const second = await pollSitemap(
+    {
+      indexUrl: "https://www.pokemoncenter.com/sitemap.xml",
+      childPattern: "product",
+      maxChildren: 1,
+      validators: first.validators,
+    },
+    ["booster box"],
+    [],
+    notes,
+  );
+
+  const asked = conditional.find((h) => h["If-None-Match"]);
+  check("the stored validator was sent back", asked?.["If-None-Match"], '"v1"');
+  check("a 304 yields nothing new", second.items.length, 0);
+  check("and is reported as unchanged, not as a failure", second.allUnchanged, true);
+  check("the note says so", notes.some((n) => n.includes("unchanged since the last check")), true);
+  check("the validator survives a 304", second.validators[child]?.etag, '"v1"');
+
+  globalThis.fetch = realFetch;
+}
+
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");
 process.exit(fails ? 1 : 0);
