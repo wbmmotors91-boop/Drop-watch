@@ -764,8 +764,18 @@ export async function probeProductPage(
     const got = await grabConditional(url, 9000, 0);
     const body = got.body;
     const lower = body.toLowerCase();
-    const signals = ["out of stock", "in stock", "add to cart", "sold out", "availability", "notify me"]
-      .filter((w) => lower.includes(w));
+    // "UNAVAILABLE" is the word their Canadian store puts on the button when
+    // something is sold out, so it is the one that matters most.
+    const signals = [
+      "unavailable",
+      "out of stock",
+      "in stock",
+      "sold out",
+      "add to cart",
+      "add to bag",
+      "availability",
+      "notify me",
+    ].filter((w) => lower.includes(w));
     return signals.length
       ? `stock check: the page answered (${body.length} bytes) and mentions ${signals.join(", ")}`
       : `stock check: the page answered (${body.length} bytes) but says nothing about stock`;

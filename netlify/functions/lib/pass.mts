@@ -70,6 +70,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let newsCursor: number | undefined;
   let robots: { rules: string[]; at: number } | undefined;
   let stockProbedAt: number | undefined;
+  let stockProbe: { at: number; result: string } | undefined;
   let pcFailures: number | undefined;
   let pcChallenges: number | undefined;
   let pcBlockedUntil: number | undefined;
@@ -182,13 +183,20 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     // will, a watchlist of the products he actually wants becomes possible and
     // restocks stop being invisible. One request an hour is the cheapest way
     // to keep testing an answer that could change.
-    if (Date.now() - (priorMeta.lastStockProbe || 0) > STOCK_PROBE_MAX_AGE_MS) {
+    if (!priorMeta.stockProbe || Date.now() - priorMeta.stockProbe.at > STOCK_PROBE_MAX_AGE_MS) {
       const sample = sitemap.items[0] || (await readJson<Item[]>("items", []))[0];
       if (sample) {
-        notes.push(await probeProductPage(sample.url, disallowed));
-        stockProbedAt = Date.now();
+        stockProbe = { at: Date.now(), result: await probeProductPage(sample.url, disallowed) };
+        stockProbedAt = stockProbe.at;
       }
     }
+
+    // Carry the last answer into every cycle's notes. It is a standing fact
+    // about what can be read, not something that happened this minute, and
+    // writing it only on the cycle that tested it means it is invisible for
+    // the other eleven.
+    const probe = stockProbe || priorMeta.stockProbe;
+    if (probe) notes.push(probe.result);
 
   } else if (kind === "news") {
     // Advance the rotation so the Reddit feeds take turns instead of all
@@ -296,6 +304,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(robots ? { robots } : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
+    ...(stockProbe ? { stockProbe } : {}),
     ...(pcFailures === undefined && pcChallenges === undefined
       ? {}
       : {

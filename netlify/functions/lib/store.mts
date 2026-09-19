@@ -20,6 +20,8 @@ export type Meta = {
   robots?: { rules: string[]; at: number };
   /** When a product page was last tested for a readable stock status. */
   lastStockProbe?: number;
+  /** The last answer to "will a product page tell us its stock?". */
+  stockProbe?: { at: number; result: string };
   /** Consecutive refusals from Pokémon Center, and when to try them again. */
   pcFailures?: number;
   /** Consecutive challenge pages, eased off before they become refusals. */
