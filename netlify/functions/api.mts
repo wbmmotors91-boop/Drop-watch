@@ -19,7 +19,9 @@ const json = (body: unknown, status = 200) =>
 const MANUAL_COOLDOWN_MS = 60_000;
 
 export default async (req: Request, _context: Context) => {
-  const route = new URL(req.url).pathname.replace(/^\/api\/?/, "");
+  // Tolerate a trailing slash: /api/state/ is the same request as /api/state,
+  // and answering 404 to it only ever looks like the app is broken.
+  const route = new URL(req.url).pathname.replace(/^\/api\/?/, "").replace(/\/+$/, "");
 
   if (route === "state") {
     const [items, meta] = await Promise.all([
