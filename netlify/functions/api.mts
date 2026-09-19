@@ -34,6 +34,13 @@ export default async (req: Request, _context: Context) => {
       lastPoll: meta.lastPoll || null,
       lastUpcPoll: meta.lastUpcPoll || null,
       notes: meta.lastNotes || [],
+      // TEMPORARY diagnostic: names only, never values.
+      diag: {
+        hasNetlifyGlobal: Boolean((globalThis as any).Netlify?.env?.get),
+        vapidKeysInProcessEnv: Object.keys(process.env).filter((k) => k.includes("VAPID")),
+        totalProcessEnvKeys: Object.keys(process.env).length,
+        sampleKeys: Object.keys(process.env).slice(0, 12),
+      },
     });
   }
 
