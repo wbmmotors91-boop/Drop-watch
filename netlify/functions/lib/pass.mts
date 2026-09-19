@@ -17,7 +17,10 @@ import {
 } from "./config.mjs";
 import { addItems, pruneItems, pushAll, readJson, writeJson, type Meta } from "./store.mjs";
 
-const MAX_KEYS_PER_SOURCE = 800;
+// Headroom over the ~1,279 sealed products Pokémon Center lists today. The
+// floor computed below is what actually guarantees correctness; this is only
+// how much history is kept beyond what is on the shelf right now.
+const MAX_KEYS_PER_SOURCE = 4000;
 
 /** How long Pokémon Center's robots.txt is trusted before re-reading it. */
 const ROBOTS_MAX_AGE_MS = 60 * 60 * 1000;
@@ -62,6 +65,26 @@ export type PassResult = {
 };
 
 export type PassKind = "pc" | "news" | "upc";
+
+/**
+ * Trim the memory of already-seen keys, never below what is on the shelf now.
+ *
+ * `cap` limits how much history is kept. `seenNow` is how many keys each
+ * source produced this pass, and it is a floor: a source with more live
+ * products than the cap keeps all of them anyway.
+ */
+export function trimSeen(
+  seen: Record<string, string[]>,
+  seenNow: Record<string, number>,
+  cap: number,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const src of Object.keys(seen)) {
+    const floor = Math.max(cap, seenNow[src] || 0);
+    out[src] = seen[src].length > floor ? seen[src].slice(-floor) : seen[src];
+  }
+  return out;
+}
 
 export async function runPass(kind: PassKind): Promise<PassResult> {
   const notes: string[] = [];
@@ -219,12 +242,18 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     bucket.push(item.key);
     fresh.push(item);
   }
-  for (const src of Object.keys(seen)) {
-    if (seen[src].length > MAX_KEYS_PER_SOURCE) {
-      seen[src] = seen[src].slice(-MAX_KEYS_PER_SOURCE);
-    }
-  }
-  await writeJson("seen", seen);
+  // Trimming the memory of what has already been seen is what stops the blob
+  // growing forever, but trimming it below the number of products currently
+  // being watched is a machine for inventing drops: the keys that fall off the
+  // end look new again on the very next check, every check, forever. Pokémon
+  // Center lists 1,279 sealed products against an old cap of 800, so roughly
+  // 479 of them were being rediscovered and announced on a loop.
+  //
+  // So the floor is whatever this pass actually saw from that source. A cap
+  // can limit history; it must never forget the present.
+  const seenNow: Record<string, number> = {};
+  for (const item of items) seenNow[item.source] = (seenNow[item.source] || 0) + 1;
+  await writeJson("seen", trimSeen(seen, seenNow, MAX_KEYS_PER_SOURCE));
 
   const meta = await readJson<Meta>("meta", {});
   // Only count as seeded once something actually came back. If every source

@@ -1,5 +1,5 @@
 import { env, itemsAfterPrune } from "./store.mjs";
-import { backoffFor, challengeBackoffFor } from "./pass.mjs";
+import { backoffFor, challengeBackoffFor, trimSeen } from "./pass.mjs";
 
 let fails = 0;
 const check = (n: string, got: any, want: any) => {
@@ -64,6 +64,27 @@ check("throwing global does not break it", env("PC_TEST"), "from-process");
   check("it caps at half an hour", challengeBackoffFor(20), 30 * 60 * 1000);
   check("a challenge never waits as long as a refusal", challengeBackoffFor(20) < backoffFor(20), true);
 }
+
+{
+  console.log("trimSeen");
+  const keys = (n: number) => Array.from({ length: n }, (_, i) => `k${i}`);
+
+  // The bug that invented drops: a source with more live products than the
+  // cap lost the overflow every pass and rediscovered it on the next one.
+  const big = trimSeen({ pc: keys(1279) }, { pc: 1279 }, 800);
+  check("a live count above the cap is kept whole", big.pc.length, 1279);
+  check("and keeps the very first key", big.pc[0], "k0");
+
+  // History beyond what is on the shelf is still allowed to fall off.
+  const old = trimSeen({ pc: keys(1279) }, { pc: 100 }, 800);
+  check("history past the cap is trimmed", old.pc.length, 800);
+  check("the newest keys are the ones kept", old.pc[799], "k1278");
+
+  check("under the cap is untouched", trimSeen({ pc: keys(5) }, { pc: 5 }, 800).pc.length, 5);
+  check("a source absent from this pass still trims", trimSeen({ pc: keys(900) }, {}, 800).pc.length, 800);
+  check("other sources are trimmed on their own count", Object.keys(trimSeen({ pc: keys(3) , news: keys(2) }, { pc: 3 }, 800)).length, 2);
+}
+
 
 console.log(fails ? `\n${fails} failed` : "\nall passed");
 process.exit(fails ? 1 : 0);

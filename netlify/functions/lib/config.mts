@@ -53,7 +53,9 @@ export const KEYWORDS_VERSION = 6;
 
 /**
  * The moment the feed learned to tell an arrival from the back catalogue
- * (2026-09-19T20:23Z).
+ * (2026-09-19T21:05Z, moved forward once the seen-list cap was fixed: every
+ * arrival recorded before that is suspect, because the watch was forgetting
+ * products and rediscovering them).
  *
  * Everything found before this was taken in by a seed or a keyword widening,
  * so none of it is evidence that a product just appeared, and a lot of it was
@@ -62,7 +64,7 @@ export const KEYWORDS_VERSION = 6;
  * exactly the kind of thing that loses a race with whichever pass writes next.
  * A constant cannot be lost.
  */
-export const CATALOGUE_EPOCH = 1789849414000;
+export const CATALOGUE_EPOCH = 1789851900000;
 
 /** True when the entry is a genuine arrival rather than the standing catalogue. */
 export function isArrival(item: { catalogue?: boolean; found?: number }): boolean {
