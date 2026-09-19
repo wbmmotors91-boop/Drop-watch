@@ -1,5 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
-import type { Item } from "./lib/sources.mjs";
+import { grab, type Item } from "./lib/sources.mjs";
 import { env, readJson, writeJson, pushAll, type Meta, type Sub } from "./lib/store.mjs";
 import { runPass } from "./lib/pass.mjs";
 import { FEEDS, RETAILERS } from "./lib/config.mjs";
@@ -35,6 +35,30 @@ export default async (req: Request, _context: Context) => {
       lastUpcPoll: meta.lastUpcPoll || null,
       notes: meta.lastNotes || [],
     });
+  }
+
+  if (route === "probe") {
+    // TEMPORARY. Does Pokemon Center answer a request from Netlify's network?
+    // It refuses this session's own fetcher, but that is a different network
+    // and the question is worth settling with evidence rather than assumption.
+    // Reports status codes only, one request each, then gets deleted.
+    const targets = [
+      "https://www.pokemoncenter.com/robots.txt",
+      "https://www.pokemoncenter.com/en-ca",
+      "https://www.pokemoncenter.com/sitemap.xml",
+      "https://www.pokemoncenter.com/en-ca/category/trading-card-game",
+    ];
+    const results = await Promise.all(
+      targets.map(async (url) => {
+        try {
+          const text = await grab(url, 8000, 0);
+          return { url, ok: true, length: text.length, head: text.slice(0, 200) };
+        } catch (err) {
+          return { url, ok: false, error: String(err).slice(0, 80) };
+        }
+      }),
+    );
+    return json({ results });
   }
 
   if (req.method !== "POST") return json({ error: "not found" }, 404);
