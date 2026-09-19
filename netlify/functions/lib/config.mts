@@ -49,7 +49,7 @@ export const KEYWORDS_INCLUDE = [
  * this, broadening the net once fires a notification for every one of them.
  * A pass that sees a new version takes the new matches in silently.
  */
-export const KEYWORDS_VERSION = 5;
+export const KEYWORDS_VERSION = 6;
 
 /**
  * News feeds additionally have to say something is actually happening.
@@ -168,6 +168,48 @@ export const STORE_SIGHTING_STORES = [
   "rcss",
 ];
 
+/**
+ * Near enough to buy from without a customs bill.
+ *
+ * The broad Reddit search is mostly American, and a US price on a US shelf is
+ * no use to someone in Ontario who does not want to pay cross-border shipping.
+ */
+export const CANADIAN_TERMS = [
+  "canada",
+  "canadian",
+  "cad",
+  "ontario",
+  "quebec",
+  "alberta",
+  "manitoba",
+  "saskatchewan",
+  "british columbia",
+  "nova scotia",
+  "new brunswick",
+  "newfoundland",
+  "toronto",
+  "vancouver",
+  "montreal",
+  "calgary",
+  "ottawa",
+  "hamilton",
+  "winnipeg",
+  "edmonton",
+  "mississauga",
+  "eb games",
+  "ebgames",
+  "indigo",
+  "chapters",
+  "superstore",
+  "shoppers",
+  "canadian tire",
+  "toys r us canada",
+  "walmart canada",
+  "best buy canada",
+  "costco canada",
+  "pokemoncenter.com/en-ca",
+];
+
 export const FEEDS: Feed[] = [
   { name: "Dexerto", url: "https://www.dexerto.com/pokemon/feed/" },
 
@@ -178,6 +220,8 @@ export const FEEDS: Feed[] = [
   {
     name: "Reddit drops",
     rotate: "reddit",
+    // Canadian posts only: he is not buying from a US shelf.
+    requireAlso: CANADIAN_TERMS,
     url:
       "https://www.reddit.com/search.rss?q=" +
       encodeURIComponent(

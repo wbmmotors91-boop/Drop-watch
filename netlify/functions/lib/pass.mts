@@ -1,8 +1,9 @@
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { grab, matches, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
+import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
 import {
+  CANADIAN_TERMS,
   FEEDS,
   KEYWORDS_EXCLUDE,
   KEYWORDS_INCLUDE,
@@ -250,10 +251,23 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
 
   // The rules changed, so anything the old ones let through has to go, or a
   // tightened list leaves its mistakes sitting in the feed forever.
-  if (keywordsWidened && kind === "pc") {
-    const dropped = await pruneItems("Pokémon Center", (title) =>
-      matches(title, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE),
-    );
+  if (keywordsWidened) {
+    let dropped = 0;
+    if (kind === "pc") {
+      dropped = await pruneItems("Pokémon Center", (i) =>
+        matches(i.title, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE),
+      );
+    } else if (kind === "news") {
+      // The broad Reddit search used to be worldwide, so American posts are
+      // sitting in the feed from before it was told to stay in Canada.
+      dropped = await pruneItems("Reddit drops", (i) =>
+        matches(`${i.title} ${i.detail || ""}`, CANADIAN_TERMS, []),
+      );
+    } else if (kind === "upc") {
+      // Barcodes are worth keeping; the US storefront links attached to them
+      // are not, and those entries were saved with the link baked in.
+      dropped = await pruneItems("UPC database", (i) => !i.url || canadianOffer([{ link: i.url }]) !== "");
+    }
     if (dropped) notes.push(`${dropped} entries no longer match and were removed from the feed`);
   } else if (fresh.length) {
     // Everything lands in the app; only the authoritative sources buzz.

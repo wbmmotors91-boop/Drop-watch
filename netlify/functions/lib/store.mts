@@ -79,16 +79,16 @@ export async function writeJson(key: string, value: unknown): Promise<void> {
 export function itemsAfterPrune(
   items: Item[],
   source: string,
-  keep: (title: string) => boolean,
+  keep: (item: Item) => boolean,
 ): Item[] {
   // Only the named source is judged. Other sources passed different gates to
   // get here and must not be deleted by this one's rules.
-  return items.filter((i) => i.source !== source || keep(i.title));
+  return items.filter((i) => i.source !== source || keep(i));
 }
 
 export async function pruneItems(
   source: string,
-  keep: (title: string) => boolean,
+  keep: (item: Item) => boolean,
 ): Promise<number> {
   const existing = await readJson<Item[]>("items", []);
   const kept = itemsAfterPrune(existing, source, keep);

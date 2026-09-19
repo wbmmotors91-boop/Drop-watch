@@ -1,9 +1,9 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, extractUrlEntries, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
+  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
 } from "./sources.mts";
 import {
-  KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE,
+  KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
   STORE_SIGHTING_PRODUCTS, STORE_SIGHTING_STORES, STORE_SIGHTING_PLACES,
 } from "./config.mts";
 
@@ -594,6 +594,33 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("the validator survives a 304", second.validators[child]?.etag, '"v1"');
 
   globalThis.fetch = realFetch;
+}
+
+
+// --- Canadian only --------------------------------------------------------
+// A US price on a US shelf is no use to him, and a US checkout means paying
+// cross-border shipping on a box he could get here.
+{
+  console.log("Canadian gating");
+  const passes = (text: string) =>
+    matches(text, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE) && matches(text, CANADIAN_TERMS, []);
+
+  check("a US post is dropped", passes("Target has elite trainer boxes in stock $49.99"), false);
+  check("a Canadian post gets through", passes("EB Games Canada has elite trainer boxes in stock"), true);
+  check("a province counts", passes("Booster box restock in Ontario today"), true);
+  check("a city counts", passes("Elite trainer box at Indigo in Hamilton"), true);
+
+  // The barcode is worth having even with no Canadian seller; the US
+  // storefront link is not.
+  check(
+    "a Canadian offer is used",
+    canadianOffer([{ link: "https://www.amazon.com/x" }, { link: "https://www.bestbuy.ca/y" }]),
+    "https://www.bestbuy.ca/y",
+  );
+  check("US only offers give no link", canadianOffer([{ link: "https://www.walmart.com/x" }]), "");
+  check("a named Canadian merchant counts", canadianOffer([{ link: "https://shop.example/x", merchant: "Toys R Us Canada" }]), "https://shop.example/x");
+  check("no offers at all is safe", canadianOffer(undefined), "");
+  check("a malformed offer is skipped", canadianOffer([{ link: "not a url" }, { link: "https://indigo.ca/z" }]), "https://indigo.ca/z");
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");

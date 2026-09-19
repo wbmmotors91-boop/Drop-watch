@@ -33,7 +33,7 @@ check("throwing global does not break it", env("PC_TEST"), "from-process");
     { key: "b", title: "Poke Ball Pattern Crew Socks Box Set", source: "Pokémon Center", url: "u" },
     { key: "c", title: "Walmart Stoney Creek put out ETBs", source: "Walmart & Superstore sightings", url: "u" },
   ] as any[];
-  const keep = (t: string) => !t.toLowerCase().includes("socks");
+  const keep = (i: any) => !String(i.title).toLowerCase().includes("socks");
 
   const out = itemsAfterPrune(items, "Pokémon Center", keep);
   check("the socks are gone", out.map((i: any) => i.key), ["a", "c"]);

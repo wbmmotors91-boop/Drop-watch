@@ -386,6 +386,24 @@ export async function pollRetailers(
 }
 
 /** upcitemdb's free tier is ~100 lookups a day, so this runs on its own slow clock. */
+/** The first offer from a Canadian merchant, or nothing. */
+export function canadianOffer(offers: unknown): string {
+  if (!Array.isArray(offers)) return "";
+  for (const o of offers) {
+    const link = String((o && (o as any).link) || "");
+    if (!link) continue;
+    let host = "";
+    try {
+      host = new URL(link).hostname.toLowerCase();
+    } catch {
+      continue;
+    }
+    const merchant = String((o && (o as any).merchant) || "").toLowerCase();
+    if (host.endsWith(".ca") || host.includes(".ca/") || merchant.includes("canada")) return link;
+  }
+  return "";
+}
+
 export async function pollUpc(
   queries: string[],
   include: string[],
@@ -406,13 +424,20 @@ export async function pollUpc(
         const upc = String(it.upc || it.ean || "");
         if (!upc || !matches(title, include, exclude)) continue;
         hits++;
+        // The barcode is the useful part: it says a product exists before the
+        // shops list it. The offers attached to it are American, and sending
+        // him to a US checkout to pay cross-border shipping is worse than
+        // sending him nowhere, so only a Canadian merchant gets to be a link.
+        const offer = canadianOffer(it.offers);
         out.push({
           key: `upc:${upc}`,
           title,
           source: "UPC database",
-          url: (it.offers && it.offers[0] && it.offers[0].link) || "",
+          url: offer,
           upc,
-          detail: `brand ${it.brand || "unknown"}`,
+          detail: offer
+            ? `brand ${it.brand || "unknown"}`
+            : `brand ${it.brand || "unknown"} · no Canadian seller yet`,
         });
       }
       notes.push(`upc "${q}": ${hits} match`);
