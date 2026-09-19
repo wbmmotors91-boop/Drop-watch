@@ -6,18 +6,50 @@ import type { Feed, Retailer } from "./sources.mjs";
  * A product has to be named. These are the things worth being woken up for.
  */
 export const KEYWORDS_INCLUDE = [
+  // Trainer boxes
   "elite trainer box",
   "etb",
+  "trainer box",
+  // Booster product
   "booster box",
   "booster bundle",
+  "build & battle",
+  "build and battle",
+  // Collections
   "ultra premium collection",
-  "upc",
-  "surprise box",
+  "super premium collection",
+  "premium collection",
+  "special collection",
   "collection box",
   "binder collection",
-  "premium collection",
-  "booster bundle",
+  "upc",
+  // Boxes and sets sold under their own name
+  "box set",
+  "ex box",
+  "v box",
+  "vmax box",
+  "vstar box",
+  "surprise box",
+  "mystery box",
+  "collector chest",
+  "collector's chest",
+  "trainer's toolkit",
+  "trainers toolkit",
+  // Tins and blisters
+  "tin",
+  "mini tin",
+  "blister",
 ];
+
+/**
+ * Bumped whenever KEYWORDS_INCLUDE or KEYWORDS_EXCLUDE changes.
+ *
+ * Widening the product list makes products that already exist match for the
+ * first time, and they look exactly like new arrivals to the diff. Without
+ * this, broadening the net once fires a notification for every one of them.
+ * A pass that sees a new version takes the new matches in silently.
+ */
+export const KEYWORDS_VERSION = 2;
 
 /**
  * News feeds additionally have to say something is actually happening.
@@ -47,12 +79,30 @@ export const NEWS_REQUIRE_ANY = [
 ];
 
 export const KEYWORDS_EXCLUDE = [
+  // Chatter, not product
   "deck profile",
   "tournament report",
   "match analysis",
   "pull rates",
   "is it worth",
   "what did i pull",
+  // Merchandise that shares a word with sealed product. Pokémon Center sells
+  // a great deal of this, and widening the net above would otherwise drag it
+  // all in.
+  "deck box",
+  "storage box",
+  "card file",
+  "lunch",
+  "sleeves",
+  "playmat",
+  "play mat",
+  "plush",
+  "backpack",
+  "tote",
+  "keychain",
+  "pin badge",
+  "t-shirt",
+  "hoodie",
 ];
 
 /**

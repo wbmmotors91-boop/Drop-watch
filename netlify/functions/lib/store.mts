@@ -11,6 +11,11 @@ export type Meta = {
   pcChildren?: string[];
   /** Advances each news pass so the rate-limited feeds take turns. */
   newsCursor?: number;
+  /**
+   * The keyword version each kind of pass last ran with. Per kind, because
+   * whichever pass runs first must not clear the flag for the others.
+   */
+  keywordsVersionByKind?: Record<string, number>;
   seeded?: boolean;
   lastPoll?: number;
   lastUpcPoll?: number;

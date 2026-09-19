@@ -6,6 +6,7 @@ import {
   FEEDS,
   KEYWORDS_EXCLUDE,
   KEYWORDS_INCLUDE,
+  KEYWORDS_VERSION,
   MAX_PUSH_PER_PASS,
   NEWS_REQUIRE_ANY,
   POKEMON_CENTER,
@@ -96,6 +97,12 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
 
   await addItems(fresh);
 
+  // Widening the product list makes existing products match for the first
+  // time. They are new to the diff but not new to the world, so take them in
+  // without notifying, exactly as the first run does.
+  const ranWith = (meta.keywordsVersionByKind || {})[kind];
+  const keywordsWidened = !firstEver && ranWith !== KEYWORDS_VERSION;
+
   let notified = 0;
   if (firstEver) {
     // Seed quietly. Otherwise the first run fires a notification for every
@@ -105,6 +112,10 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       items.length
         ? `seeded ${fresh.length} existing entries without notifying`
         : "no source answered, staying unseeded so the next run does not flood you",
+    );
+  } else if (keywordsWidened) {
+    notes.push(
+      `the product list changed, so ${fresh.length} newly matching entries were added without notifying`,
     );
   } else if (fresh.length) {
     // Everything lands in the app; only the authoritative sources buzz.
@@ -128,6 +139,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     seeded: meta.seeded || seededNow,
     lastNotes: notes,
     notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
+    keywordsVersionByKind: { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION },
     ...(pcChildren ? { pcChildren } : {}),
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),

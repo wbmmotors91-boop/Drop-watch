@@ -2,6 +2,7 @@ import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
   extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
 } from "./sources.mts";
+import { KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE } from "./config.mts";
 
 let fails = 0;
 const check = (name: string, got: any, want: any) => {
@@ -375,6 +376,51 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a negative cursor still picks a real feed", namesAt(-1), ["dexerto", "r3"]);
   check("a huge cursor still picks a real feed", feedsForCycle(feeds, 2 ** 53).length, 2);
   check("no rotation groups is a no-op", feedsForCycle([feeds[0]], 5).length, 1);
+}
+
+
+// --- the real product list against real product names ---------------------
+// Widening the keywords is the change most likely to go wrong quietly: too
+// narrow and a drop is missed, too wide and Pokémon Center's merchandise
+// starts sending notifications. These are real Pokémon Center product names.
+{
+  console.log("product keywords");
+  const want = [
+    "Pokemon Tcg 30th Celebration Pokemon Center Elite Trainer Box",
+    "Pokemon Tcg Mega Evolution Pitch Black Booster Bundle 6 Packs",
+    "Pokemon Tcg Terapagos Ex Ultra Premium Collection",
+    "Pokemon Tcg Charizard Ex Super Premium Collection",
+    "Pokemon Tcg Scarlet And Violet Black Bolt Binder Collection",
+    "Pokemon Tcg Crown Zenith Booster Box",
+    "Pokemon Tcg Zenith Box Set",
+    "Pokemon Tcg Trainers Toolkit 2025",
+    "Pokemon Tcg Mega Evolution Build And Battle Box",
+    "Pokemon Tcg Charizard Ex Collector Chest",
+    "Pokemon Tcg Paldea Adventure Collectors Tin",
+    "Pokemon Tcg Mini Tin Scarlet Violet",
+    "Pokemon Tcg Three Pack Blister Pikachu",
+    "Pokemon Tcg Mewtwo Ex Box",
+    "Pokemon Tcg Special Collection Greninja",
+  ];
+  const dont = [
+    "Pokemon Center Pikachu Plush 8 In",
+    "Pokemon Tcg Card Sleeves Pikachu 65 Count",
+    "Pokemon Tcg Deck Box Charizard",
+    "Pokemon Center Storage Box Eevee",
+    "Pokemon Center Lunch Tote Snorlax",
+    "Pokemon Center Backpack Gengar",
+    "Pokemon Center Keychain Mew",
+    "Pokemon Tcg Playmat Mewtwo",
+    "Pokemon Center T-Shirt Adult Charizard",
+    "Pokemon Center Card File Box Eevee",
+    "What Did I Pull From A Booster Box",
+    "Deck Profile Gardevoir Elite Trainer Box",
+  ];
+
+  const missed = want.filter((t) => !matches(t, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE));
+  const wrongly = dont.filter((t) => matches(t, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE));
+  check("every sealed product is caught", missed, []);
+  check("no merchandise gets through", wrongly, []);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");
