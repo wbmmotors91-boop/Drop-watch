@@ -2,7 +2,7 @@ import type { Config, Context } from "@netlify/functions";
 import type { Item } from "./lib/sources.mjs";
 import { env, readJson, writeJson, pushAll, type Meta, type Sub } from "./lib/store.mjs";
 import { runPass } from "./lib/pass.mjs";
-import { FEEDS, PUSH_SOURCES, RETAILERS } from "./lib/config.mjs";
+import { FEEDS, PUSH_SOURCES, RETAILERS, isArrival } from "./lib/config.mjs";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -45,7 +45,7 @@ export default async (req: Request, _context: Context) => {
       // Only genuine arrivals. Everything else is the back catalogue: it is
       // what Pokémon Center already sells, with no stock status attached, and
       // showing it as a find is what put sold-out tins on his screen.
-      items: items.filter((i) => !i.catalogue).slice(0, 60),
+      items: items.filter(isArrival).slice(0, 60),
       watchedCount: items.length,
       lastPoll: meta.lastPoll || null,
       lastUpcPoll: meta.lastUpcPoll || null,

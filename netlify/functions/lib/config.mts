@@ -52,11 +52,22 @@ export const KEYWORDS_INCLUDE = [
 export const KEYWORDS_VERSION = 6;
 
 /**
- * Bumped when the stored feed has to be re-judged. Version 1 is the first run
- * that tells a new arrival apart from a product that was simply on the shelf
- * when we started looking.
+ * The moment the feed learned to tell an arrival from the back catalogue
+ * (2026-09-19T20:23Z).
+ *
+ * Everything found before this was taken in by a seed or a keyword widening,
+ * so none of it is evidence that a product just appeared, and a lot of it was
+ * sold out years ago. A fixed timestamp rather than a stored migration flag:
+ * three pollers share one blob, and a one-shot rewrite of the item list is
+ * exactly the kind of thing that loses a race with whichever pass writes next.
+ * A constant cannot be lost.
  */
-export const CATALOGUE_VERSION = 1;
+export const CATALOGUE_EPOCH = 1789849414000;
+
+/** True when the entry is a genuine arrival rather than the standing catalogue. */
+export function isArrival(item: { catalogue?: boolean; found?: number }): boolean {
+  return !item.catalogue && (item.found || 0) >= CATALOGUE_EPOCH;
+}
 
 /**
  * News feeds additionally have to say something is actually happening.

@@ -4,7 +4,6 @@ import type { Item } from "./sources.mjs";
 import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
 import {
   CANADIAN_TERMS,
-  CATALOGUE_VERSION,
   FEEDS,
   KEYWORDS_EXCLUDE,
   KEYWORDS_INCLUDE,
@@ -16,7 +15,7 @@ import {
   RETAILERS,
   UPC_QUERIES,
 } from "./config.mjs";
-import { addItems, markAllCatalogue, pruneItems, pushAll, readJson, writeJson, type Meta } from "./store.mjs";
+import { addItems, pruneItems, pushAll, readJson, writeJson, type Meta } from "./store.mjs";
 
 const MAX_KEYS_PER_SOURCE = 800;
 
@@ -240,14 +239,6 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   const ranWith = (meta.keywordsVersionByKind || {})[kind];
   const keywordsWidened = !firstEver && ranWith !== KEYWORDS_VERSION;
 
-  // One-time: everything already saved got there through a seed or a
-  // widening, so it is the back catalogue, not a drop. Say so before adding
-  // anything new, or today's real arrivals get buried under years of
-  // sold-out tins.
-  if (meta.catalogueVersion !== CATALOGUE_VERSION) {
-    const marked = await markAllCatalogue();
-    if (marked) notes.push(`${marked} existing entries reclassified as catalogue, not new arrivals`);
-  }
 
   // A quiet add is a product we had simply never looked for before. It goes in
   // the known list so the next diff is right, but it is not a new arrival and
@@ -310,7 +301,6 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   await writeJson("meta", {
     ...meta,
     seeded: meta.seeded || seededNow,
-    catalogueVersion: CATALOGUE_VERSION,
     lastNotes: notes,
     notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
     keywordsVersionByKind: { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION },

@@ -5,6 +5,7 @@ import {
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
   STORE_SIGHTING_PRODUCTS, STORE_SIGHTING_STORES, STORE_SIGHTING_PLACES,
+  CATALOGUE_EPOCH, isArrival,
 } from "./config.mts";
 
 let fails = 0;
@@ -621,6 +622,19 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a named Canadian merchant counts", canadianOffer([{ link: "https://shop.example/x", merchant: "Toys R Us Canada" }]), "https://shop.example/x");
   check("no offers at all is safe", canadianOffer(undefined), "");
   check("a malformed offer is skipped", canadianOffer([{ link: "not a url" }, { link: "https://indigo.ca/z" }]), "https://indigo.ca/z");
+}
+
+{
+  console.log("arrivals vs the back catalogue");
+  // The whole point: a product that was already on the shelf when we started
+  // looking is not a drop, however recently we first noticed it.
+  check("found before the epoch is catalogue", isArrival({ found: CATALOGUE_EPOCH - 1 }), false);
+  check("found after the epoch is an arrival", isArrival({ found: CATALOGUE_EPOCH + 1 }), true);
+  check("the epoch itself counts as an arrival", isArrival({ found: CATALOGUE_EPOCH }), true);
+  // A seed or a widening flags its entries explicitly, and that flag wins
+  // even for something taken in today.
+  check("a flagged entry is never an arrival", isArrival({ found: CATALOGUE_EPOCH + 9e6, catalogue: true }), false);
+  check("no timestamp at all is catalogue", isArrival({}), false);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");

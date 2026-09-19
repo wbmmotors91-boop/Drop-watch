@@ -27,12 +27,6 @@ export type Meta = {
   /** Consecutive challenge pages, eased off before they become refusals. */
   pcChallenges?: number;
   pcBlockedUntil?: number;
-  /**
-   * Which run of the catalogue rule the stored feed was written under. A bump
-   * reclassifies everything already saved, because none of it was ever
-   * confirmed to be a new arrival.
-   */
-  catalogueVersion?: number;
   seeded?: boolean;
   lastPoll?: number;
   lastUpcPoll?: number;
@@ -103,21 +97,6 @@ export async function pruneItems(
   const dropped = existing.length - kept.length;
   if (dropped) await writeJson("items", kept);
   return dropped;
-}
-
-/**
- * Reclassify the whole stored feed as catalogue.
- *
- * Everything saved before the feed learned the difference arrived through a
- * seed or a widening, so none of it is evidence that a product just appeared.
- * Marking rather than deleting keeps the diff honest: these keys stay known,
- * so a genuine re-listing later is still recognisable.
- */
-export async function markAllCatalogue(): Promise<number> {
-  const existing = await readJson<Item[]>("items", []);
-  const changed = existing.filter((i) => !i.catalogue).length;
-  if (changed) await writeJson("items", existing.map((i) => ({ ...i, catalogue: true })));
-  return changed;
 }
 
 export async function addItems(fresh: Item[], catalogue = false): Promise<Item[]> {
