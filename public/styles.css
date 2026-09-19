@@ -104,3 +104,11 @@ footer { padding: 6px 0 28px; text-align: center; }
 .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 5px; vertical-align: 1px; }
 .dot.stale { background: #f59e0b; }
 .dot.off { background: var(--muted); }
+
+/* The poll notes, shown so a quiet app can be told apart from a broken one. */
+.notes { list-style: none; margin: 8px 0 0; padding: 0; }
+.notes li {
+  color: var(--muted); font-size: 0.78rem; line-height: 1.45;
+  padding: 4px 0; border-top: 1px solid var(--line); word-break: break-word;
+}
+.notes li:first-child { border-top: 0; }

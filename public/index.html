@@ -52,15 +52,21 @@
     <h2>What this watches</h2>
     <ul class="sources" id="sources"></ul>
     <details>
+      <summary>What it's seeing right now</summary>
+      <ul class="notes" id="notes"><li>Loading…</li></ul>
+    </details>
+    <details>
       <summary>What it can't do</summary>
       <p>
-        Pokémon Center's own site blocks anything that isn't a real browser on a
-        home connection, so nothing running in the cloud can read their stock
-        pages. This watches everywhere a new product shows up
-        <em>before</em> or <em>around</em> that: announcements, retailer
-        listings and barcode databases. Announced preorders usually sit up for
-        fifteen to sixty minutes, which is the window this is built to catch.
-        Surprise restocks get no warning from anyone.
+        This reads Pokémon Center's own published product list, so a new product
+        page appearing is Pokémon Center itself saying a new product exists.
+        That's the alert, and announced preorders usually sit up for fifteen to
+        sixty minutes.
+      </p>
+      <p>
+        What it can't see is stock. Their list says a product exists, not
+        whether you can buy it, so a restock of something already listed gives
+        no signal. Everything else here is for reading, not for alerts.
       </p>
     </details>
   </section>

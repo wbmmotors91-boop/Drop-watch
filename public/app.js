@@ -77,6 +77,16 @@ async function loadState() {
     })
     .join("");
 
+  // The notes are how you tell a quiet app from a broken one.
+  const byKind = body.notesByKind || {};
+  const lines = [...(byKind.pc || []), ...(byKind.news || []), ...(byKind.upc || [])];
+  const notes = $("notes");
+  if (notes) {
+    notes.innerHTML = lines.length
+      ? lines.map((n) => `<li>${escapeHtml(n)}</li>`).join("")
+      : "<li>Nothing reported yet.</li>";
+  }
+
   const last = body.lastPoll;
   const stale = last && Date.now() - last > 20 * 60 * 1000;
   const cls = !last ? "off" : stale ? "stale" : "";
