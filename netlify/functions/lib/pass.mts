@@ -30,6 +30,7 @@ export type PassKind = "pc" | "news" | "upc";
 export async function runPass(kind: PassKind): Promise<PassResult> {
   const notes: string[] = [];
   let items: Item[] = [];
+  let pcChildren: string[] | undefined;
 
   if (kind === "pc") {
     // Read their rules before their data, and obey whatever they say.
@@ -41,18 +42,22 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       notes.push("skipping the sitemap this cycle rather than guessing the rules");
       return { checked: ["Pokémon Center"], found: 0, notified: 0, seeded: false, notes };
     }
-    items = await pollSitemap(
+    const sitemap = await pollSitemap(
       {
         indexUrl: POKEMON_CENTER.indexUrl,
         childPattern: POKEMON_CENTER.childPattern,
         maxChildren: POKEMON_CENTER.maxChildren,
         region: POKEMON_CENTER.region,
         disallowed,
+        knownChildren: (await readJson<Meta>("meta", {})).pcChildren || [],
       },
       KEYWORDS_INCLUDE,
       KEYWORDS_EXCLUDE,
       notes,
     );
+    items = sitemap.items;
+    // Remember the child sitemaps so a challenged index does not stop the watch.
+    if (sitemap.children.length) pcChildren = sitemap.children;
   } else if (kind === "news") {
     const [feedItems, retailItems] = await Promise.all([
       pollFeeds(FEEDS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, NEWS_REQUIRE_ANY),
@@ -119,6 +124,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     seeded: meta.seeded || seededNow,
     lastNotes: notes,
     notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
+    ...(pcChildren ? { pcChildren } : {}),
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
     ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });

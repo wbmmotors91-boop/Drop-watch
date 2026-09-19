@@ -7,6 +7,8 @@ import { MAX_ITEMS } from "./config.mjs";
 
 export type Sub = { endpoint: string; keys: { p256dh: string; auth: string }; added: number };
 export type Meta = {
+  /** Child sitemaps that last worked, reused when the index is challenged. */
+  pcChildren?: string[];
   seeded?: boolean;
   lastPoll?: number;
   lastUpcPoll?: number;

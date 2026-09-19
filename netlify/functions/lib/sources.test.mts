@@ -197,7 +197,7 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   }) as any;
 
   const notes: string[] = [];
-  const items = await pollSitemap(
+  const { items } = await pollSitemap(
     { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 2, disallowed: rules },
     ["elite trainer box", "booster box"],
     [],
@@ -226,7 +226,7 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
 
   // If robots ever forbids the product sitemap, we must stop by ourselves.
   const blockedNotes: string[] = [];
-  const blocked = await pollSitemap(
+  const { items: blocked } = await pollSitemap(
     { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 2, disallowed: ["/sitemaps"] },
     ["booster box"],
     [],
@@ -234,6 +234,57 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   );
   check("disallowed child sitemap is not fetched", blocked.length, 0);
   check("and it says why", blockedNotes.some((n) => n.includes("robots.txt disallows")), true);
+
+  globalThis.fetch = realFetch;
+}
+
+
+// --- a challenged index falls back to the children that worked before ------
+// Imperva answers 200 with a non-sitemap body when it decides to challenge a
+// request. That must not silently stop the watch.
+{
+  console.log("challenged sitemap index");
+  const PRODUCTS = `<?xml version="1.0"?><urlset>
+    <url><loc>https://www.pokemoncenter.com/en-ca/product/200-1/mega-charizard-booster-box</loc></url>
+  </urlset>`;
+  const CHALLENGE = "<html><head><title>Pardon Our Interruption</title></head><body>...</body></html>";
+
+  const realFetch = globalThis.fetch;
+  const asked: string[] = [];
+  globalThis.fetch = (async (u: any) => {
+    const url = String(u);
+    asked.push(url);
+    const body = url.includes("products-1") ? PRODUCTS : CHALLENGE;
+    return { ok: true, status: 200, text: async () => body } as any;
+  }) as any;
+
+  const notes: string[] = [];
+  const known = ["https://www.pokemoncenter.com/sitemaps/products-1.xml"];
+  const { items, children } = await pollSitemap(
+    { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 1, knownChildren: known },
+    ["booster box"],
+    [],
+    notes,
+  );
+
+  check("the index was read twice before giving up", asked.filter((u) => u.endsWith("/sitemap.xml")).length, 2);
+  check("the known child was used anyway", items.length, 1);
+  check("and the fallback is recorded", notes.some((n) => n.includes("falling back")), true);
+  check("the note says what came back", notes.some((n) => n.includes("Pardon Our Interruption")), true);
+  check("children are handed back for next time", children, known);
+
+  // With nothing remembered yet there is nothing to fall back to, and the
+  // note must still explain the silence.
+  const coldNotes: string[] = [];
+  const cold = await pollSitemap(
+    { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 1 },
+    ["booster box"],
+    [],
+    coldNotes,
+  );
+  check("no items without a fallback", cold.items.length, 0);
+  check("nothing to remember", cold.children.length, 0);
+  check("but it says why", coldNotes.some((n) => n.includes("gave no child sitemaps")), true);
 
   globalThis.fetch = realFetch;
 }

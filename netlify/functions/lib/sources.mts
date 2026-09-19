@@ -385,6 +385,18 @@ export type SitemapOptions = {
   maxChildren?: number;
   /** Paths robots.txt forbids; anything under one of these is skipped. */
   disallowed?: string[];
+  /**
+   * Child sitemaps that worked on an earlier cycle. Used only when the index
+   * itself comes back unreadable, so a challenged index costs one cycle of
+   * freshness rather than silently stopping the whole watch.
+   */
+  knownChildren?: string[];
+};
+
+export type SitemapResult = {
+  items: Item[];
+  /** The child sitemaps this cycle actually used, worth remembering. */
+  children: string[];
 };
 
 function isDisallowed(url: string, disallowed: string[]): boolean {
@@ -398,49 +410,24 @@ function isDisallowed(url: string, disallowed: string[]): boolean {
   return disallowed.some((rule) => rule && path.startsWith(rule));
 }
 
-export async function pollSitemap(
+/** A short, safe description of a response body, for a note. */
+function describeBody(body: string): string {
+  const head = body.slice(0, 70).replace(/\s+/g, " ").trim();
+  return `${body.length} bytes, starts "${head}"`;
+}
+
+/** Read a set of child sitemaps and turn the product URLs into items. */
+async function scanChildren(
+  children: string[],
   opts: SitemapOptions,
   include: string[],
   exclude: string[],
   notes: string[],
 ): Promise<Item[]> {
-  const {
-    indexUrl,
-    childPattern = "product",
-    maxChildren = 2,
-    disallowed = [],
-    region = "",
-  } = opts;
-
-  let indexXml: string;
-  try {
-    indexXml = await grab(indexUrl, 9000);
-  } catch (err) {
-    notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
-    return [];
-  }
-
-  const allChildren = extractLocs(indexXml);
-  if (!allChildren.length) {
-    notes.push("Pokémon Center sitemap: the index listed no child sitemaps");
-    return [];
-  }
-
-  // Prefer a child sitemap that names itself after products, but do not
-  // depend on that naming: if nothing matches, scan the first few anyway and
-  // let the keyword filter decide. The note records what was actually there,
-  // so the real layout is visible from the app rather than guessed at.
-  const preferred = allChildren.filter((u) => u.toLowerCase().includes(childPattern));
-  const children = preferred.length ? preferred : allChildren;
-  notes.push(
-    `Pokémon Center index: ${allChildren.length} child sitemaps [${allChildren
-      .map((u) => u.split("/").pop())
-      .slice(0, 8)
-      .join(", ")}]`,
-  );
-
+  const { maxChildren = 2, disallowed = [], region = "" } = opts;
   const out: Item[] = [];
   let scanned = 0;
+
   for (const child of children.slice(0, maxChildren)) {
     if (isDisallowed(child, disallowed)) {
       notes.push(`Pokemon Center sitemap: robots.txt disallows ${child}`);
@@ -471,6 +458,63 @@ export async function pollSitemap(
 
   notes.push(`Pokémon Center: ${scanned} URLs scanned, ${out.length} match`);
   return out;
+}
+
+export async function pollSitemap(
+  opts: SitemapOptions,
+  include: string[],
+  exclude: string[],
+  notes: string[],
+): Promise<SitemapResult> {
+  const { indexUrl, childPattern = "product", knownChildren = [] } = opts;
+
+  // A 200 with no sitemap in it is what Imperva serves when it decides to
+  // challenge a request, and it clears on its own. Read the index twice
+  // before believing it, and if it still says nothing, fall back to the
+  // child sitemaps that worked last time rather than going quiet.
+  let indexXml = "";
+  let allChildren: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await sleep(SAME_HOST_GAP_MS);
+    try {
+      indexXml = await grab(indexUrl, 9000);
+    } catch (err) {
+      notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
+      break;
+    }
+    allChildren = extractLocs(indexXml);
+    if (allChildren.length) break;
+  }
+
+  if (!allChildren.length) {
+    if (indexXml) {
+      notes.push(`Pokémon Center sitemap: the index gave no child sitemaps (${describeBody(indexXml)})`);
+    }
+    if (!knownChildren.length) return { items: [], children: [] };
+    notes.push(`Pokémon Center: falling back to ${knownChildren.length} child sitemaps from an earlier cycle`);
+    return {
+      items: await scanChildren(knownChildren, opts, include, exclude, notes),
+      children: knownChildren,
+    };
+  }
+
+  // Prefer a child sitemap that names itself after products, but do not
+  // depend on that naming: if nothing matches, scan the first few anyway and
+  // let the keyword filter decide. The note records what was actually there,
+  // so the real layout is visible from the app rather than guessed at.
+  const preferred = allChildren.filter((u) => u.toLowerCase().includes(childPattern));
+  const children = preferred.length ? preferred : allChildren;
+  notes.push(
+    `Pokémon Center index: ${allChildren.length} child sitemaps [${allChildren
+      .map((u) => u.split("/").pop())
+      .slice(0, 8)
+      .join(", ")}]`,
+  );
+
+  return {
+    items: await scanChildren(children, opts, include, exclude, notes),
+    children,
+  };
 }
 
 /** Parse the Disallow rules that apply to everyone from a robots.txt. */
