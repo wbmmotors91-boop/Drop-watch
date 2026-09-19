@@ -14,6 +14,8 @@ export type Item = {
   url: string;
   upc?: string;
   detail?: string;
+  /** Pokémon Center's own product code, taken from the URL. */
+  sku?: string;
   found?: number;
   /**
    * True when the entry was taken in quietly: the first seed, or a widened
@@ -501,6 +503,18 @@ export function slugWords(url: string): string {
   return decodeURIComponent(tail).replace(/-/g, " ");
 }
 
+/**
+ * Pull the SKU out of a Pokémon Center product URL.
+ *
+ * Their paths carry it directly: /product/699-85626/pokemon-tcg-... The SKU is
+ * what identifies a drop on a queue page or in someone else's post, so showing
+ * it is worth the two lines even though nothing here searches by it.
+ */
+export function skuFromUrl(url: string): string {
+  const m = url.split("?")[0].match(/\/product\/([A-Za-z0-9-]+)/);
+  return m ? m[1] : "";
+}
+
 export function titleFromUrl(url: string): string {
   const words = slugWords(url);
   return words.replace(/\b\w/g, (c) => c.toUpperCase());
@@ -630,11 +644,13 @@ async function scanChildren(
         // Key on the canonical URL so changing region never re-alerts.
         const key = `pc:${loc}`;
         lastmods[key] = lastmod;
+        const sku = skuFromUrl(loc);
         out.push({
           key,
           title: titleFromUrl(loc),
           source: "Pokémon Center",
           url: regionalise(loc, region),
+          ...(sku ? { sku } : {}),
           detail: "listed on Pokémon Center's own sitemap",
         });
       }

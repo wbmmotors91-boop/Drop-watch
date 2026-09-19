@@ -50,9 +50,12 @@ function renderFeed(items, watchedCount) {
         ? `<a href="${i.url}" target="_blank" rel="noopener">${escapeHtml(title)}</a>`
         : `<span>${escapeHtml(title)}</span>`;
       const upc = i.upc ? `<span class="chip upc">UPC ${escapeHtml(i.upc)}</span>` : "";
+      // The SKU is how a drop is identified on a queue page, so put it where
+      // it can be read and copied rather than leaving it buried in the link.
+      const sku = i.sku ? `<span class="chip upc">SKU ${escapeHtml(i.sku)}</span>` : "";
       return `<li>${link}<div class="meta"><span class="chip">${escapeHtml(
         i.source,
-      )}</span>${upc}<span class="when">${ago(i.found)}</span></div></li>`;
+      )}</span>${sku}${upc}<span class="when">${ago(i.found)}</span></div></li>`;
     })
     .join("");
 }

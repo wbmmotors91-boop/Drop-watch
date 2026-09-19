@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
+  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle, skuFromUrl,
 } from "./sources.mts";
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
@@ -622,6 +622,22 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a named Canadian merchant counts", canadianOffer([{ link: "https://shop.example/x", merchant: "Toys R Us Canada" }]), "https://shop.example/x");
   check("no offers at all is safe", canadianOffer(undefined), "");
   check("a malformed offer is skipped", canadianOffer([{ link: "not a url" }, { link: "https://indigo.ca/z" }]), "https://indigo.ca/z");
+}
+
+{
+  console.log("product codes");
+  check(
+    "the SKU comes out of the path",
+    skuFromUrl("https://www.pokemoncenter.com/product/699-85626/pokemon-tcg-x"),
+    "699-85626",
+  );
+  check(
+    "a regional prefix does not hide it",
+    skuFromUrl("https://www.pokemoncenter.com/en-ca/product/100-12345/y"),
+    "100-12345",
+  );
+  check("a query string is ignored", skuFromUrl("https://www.pokemoncenter.com/product/700-1/z?a=1"), "700-1");
+  check("a non-product URL has none", skuFromUrl("https://www.pokemoncenter.com/category/tcg"), "");
 }
 
 {
