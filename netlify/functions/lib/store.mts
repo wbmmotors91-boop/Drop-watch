@@ -9,6 +9,8 @@ export type Sub = { endpoint: string; keys: { p256dh: string; auth: string }; ad
 export type Meta = {
   /** Child sitemaps that last worked, reused when the index is challenged. */
   pcChildren?: string[];
+  /** Advances each news pass so the rate-limited feeds take turns. */
+  newsCursor?: number;
   seeded?: boolean;
   lastPoll?: number;
   lastUpcPoll?: number;

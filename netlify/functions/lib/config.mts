@@ -88,6 +88,7 @@ export const FEEDS: Feed[] = [
   // cycle, even spaced out.
   {
     name: "Reddit drops",
+    rotate: "reddit",
     url:
       "https://www.reddit.com/search.rss?q=" +
       encodeURIComponent(
@@ -98,6 +99,7 @@ export const FEEDS: Feed[] = [
   },
   {
     name: "Reddit Canada deals",
+    rotate: "reddit",
     url:
       "https://www.reddit.com/r/PokemonTCGDealsCanada/search.rss?restrict_sr=1&q=" +
       encodeURIComponent("booster box OR elite trainer box OR preorder") +
@@ -118,6 +120,7 @@ export const FEEDS: Feed[] = [
   // below then insist a post name both a store and the product.
   {
     name: "Walmart & Superstore sightings",
+    rotate: "reddit",
     url:
       "https://www.reddit.com/search.rss?q=" +
       encodeURIComponent(

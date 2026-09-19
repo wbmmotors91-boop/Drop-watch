@@ -187,6 +187,14 @@ export type Feed = {
   include?: string[];
   /** Replaces the shared "something is happening" gate for this feed alone. */
   requireAny?: string[];
+  /**
+   * Feeds sharing a rotation group are read one per cycle, round-robin,
+   * rather than all of them every cycle. Reddit rate-limits by address and
+   * answered 429 to two of three feeds even spaced four seconds apart, so the
+   * fix is to stop asking it three times. None of these sources notifies, so
+   * reading each one every third cycle costs nothing that matters.
+   */
+  rotate?: string;
 };
 export type Retailer = { name: string; url: string; pattern: string };
 
@@ -217,6 +225,33 @@ function hostOf(url: string): string {
  * once it is spent, the remaining feeds for that host are skipped and say so
  * rather than the whole run timing out.
  */
+/**
+ * Pick this cycle's feeds: everything ungrouped, plus one member of each
+ * rotation group, chosen by a cursor that advances every pass.
+ */
+export function feedsForCycle(feeds: Feed[], cursor: number): Feed[] {
+  const groups = new Map<string, Feed[]>();
+  const picked: Feed[] = [];
+
+  for (const f of feeds) {
+    if (!f.rotate) picked.push(f);
+    else {
+      const list = groups.get(f.rotate);
+      if (list) list.push(f);
+      else groups.set(f.rotate, [f]);
+    }
+  }
+
+  for (const group of groups.values()) {
+    // A non-negative index whatever the cursor does, including wrapping past
+    // Number.MAX_SAFE_INTEGER or arriving negative from stored state.
+    const i = ((Math.trunc(cursor) % group.length) + group.length) % group.length;
+    picked.push(group[i]);
+  }
+
+  return picked;
+}
+
 export async function pollFeeds(
   feeds: Feed[],
   include: string[],
@@ -224,11 +259,19 @@ export async function pollFeeds(
   notes: string[],
   requireAny: string[] = [],
   budgetMs = 20000,
+  cursor = 0,
 ): Promise<Item[]> {
   const deadline = Date.now() + budgetMs;
+  const thisCycle = feedsForCycle(feeds, cursor);
+
+  // Say so, rather than letting a feed silently vanish from the notes and
+  // look like it broke.
+  for (const f of feeds) {
+    if (!thisCycle.includes(f)) notes.push(`${f.name}: not this cycle, these take turns`);
+  }
 
   const byHost = new Map<string, Feed[]>();
-  for (const f of feeds) {
+  for (const f of thisCycle) {
     const host = hostOf(f.url);
     const list = byHost.get(host);
     if (list) list.push(f);

@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise,
+  extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise, feedsForCycle,
 } from "./sources.mts";
 
 let fails = 0;
@@ -343,6 +343,38 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a sighting with no store is dropped", none.length, 0);
 
   globalThis.fetch = realFetch;
+}
+
+
+// --- rotation -------------------------------------------------------------
+// Reddit answered 429 to two of three feeds even spaced four seconds apart, so
+// they take turns instead. Nothing in a rotation group notifies, so a feed
+// read every third cycle is fine; a feed never read is not.
+{
+  console.log("feed rotation");
+  const feeds = [
+    { name: "dexerto", url: "https://dexerto.example/f.rss" },
+    { name: "r1", url: "https://reddit.example/1.rss", rotate: "reddit" },
+    { name: "r2", url: "https://reddit.example/2.rss", rotate: "reddit" },
+    { name: "r3", url: "https://reddit.example/3.rss", rotate: "reddit" },
+  ];
+  const namesAt = (c: number) => feedsForCycle(feeds, c).map((f) => f.name).sort();
+
+  check("one reddit feed per cycle, plus the ungrouped one", feedsForCycle(feeds, 0).length, 2);
+  check("ungrouped feed is read every cycle", namesAt(0).includes("dexerto"), true);
+  check("cycle 0 takes the first", namesAt(0), ["dexerto", "r1"]);
+  check("cycle 1 takes the second", namesAt(1), ["dexerto", "r2"]);
+  check("cycle 2 takes the third", namesAt(2), ["dexerto", "r3"]);
+  check("cycle 3 wraps around", namesAt(3), ["dexerto", "r1"]);
+
+  // Every member must come up over a full turn, or a source is silently dead.
+  const seen = new Set([0, 1, 2].flatMap((c) => feedsForCycle(feeds, c).map((f) => f.name)));
+  check("every feed is read within one full rotation", [...seen].sort(), ["dexerto", "r1", "r2", "r3"]);
+
+  // Stored state can come back odd; it must never index out of the group.
+  check("a negative cursor still picks a real feed", namesAt(-1), ["dexerto", "r3"]);
+  check("a huge cursor still picks a real feed", feedsForCycle(feeds, 2 ** 53).length, 2);
+  check("no rotation groups is a no-op", feedsForCycle([feeds[0]], 5).length, 1);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");

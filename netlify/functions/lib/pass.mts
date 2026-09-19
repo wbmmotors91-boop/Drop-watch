@@ -31,6 +31,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   const notes: string[] = [];
   let items: Item[] = [];
   let pcChildren: string[] | undefined;
+  let newsCursor: number | undefined;
 
   if (kind === "pc") {
     // Read their rules before their data, and obey whatever they say.
@@ -59,8 +60,11 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     // Remember the child sitemaps so a challenged index does not stop the watch.
     if (sitemap.children.length) pcChildren = sitemap.children;
   } else if (kind === "news") {
+    // Advance the rotation so the Reddit feeds take turns instead of all
+    // three asking at once and two of them earning a 429.
+    newsCursor = ((await readJson<Meta>("meta", {})).newsCursor || 0) + 1;
     const [feedItems, retailItems] = await Promise.all([
-      pollFeeds(FEEDS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, NEWS_REQUIRE_ANY),
+      pollFeeds(FEEDS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, NEWS_REQUIRE_ANY, 20000, newsCursor),
       pollRetailers(RETAILERS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes),
     ]);
     items = [...feedItems, ...retailItems];
@@ -125,6 +129,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     lastNotes: notes,
     notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
     ...(pcChildren ? { pcChildren } : {}),
+    ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
     ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });
