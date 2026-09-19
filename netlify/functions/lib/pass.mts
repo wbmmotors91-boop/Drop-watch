@@ -1,7 +1,7 @@
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { grab, matches, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc } from "./sources.mjs";
+import { grab, matches, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
 import {
   FEEDS,
   KEYWORDS_EXCLUDE,
@@ -21,6 +21,9 @@ const MAX_KEYS_PER_SOURCE = 800;
 /** How long Pokémon Center's robots.txt is trusted before re-reading it. */
 const ROBOTS_MAX_AGE_MS = 60 * 60 * 1000;
 
+/** How often to re-test whether a product page answers a hosted request. */
+const STOCK_PROBE_MAX_AGE_MS = 60 * 60 * 1000;
+
 export type PassResult = {
   checked: string[];
   found: number;
@@ -37,6 +40,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let pcChildren: string[] | undefined;
   let newsCursor: number | undefined;
   let robots: { rules: string[]; at: number } | undefined;
+  let stockProbedAt: number | undefined;
 
   if (kind === "pc") {
     // Read their rules before their data, and obey whatever they say. Their
@@ -107,6 +111,18 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         }
       }
       await writeJson("pcLastmod", now);
+    }
+
+    // Once an hour, ask whether a product page will talk to us at all. If it
+    // will, a watchlist of the products he actually wants becomes possible and
+    // restocks stop being invisible. One request an hour is the cheapest way
+    // to keep testing an answer that could change.
+    if (Date.now() - (priorMeta.lastStockProbe || 0) > STOCK_PROBE_MAX_AGE_MS) {
+      const sample = sitemap.items[0] || (await readJson<Item[]>("items", []))[0];
+      if (sample) {
+        notes.push(await probeProductPage(sample.url, disallowed));
+        stockProbedAt = Date.now();
+      }
     }
 
   } else if (kind === "news") {
@@ -201,6 +217,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(pcChildren ? { pcChildren } : {}),
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(robots ? { robots } : {}),
+    ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
     ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });

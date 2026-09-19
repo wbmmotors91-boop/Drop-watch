@@ -531,7 +531,7 @@ export type SitemapResult = {
   allUnchanged: boolean;
 };
 
-function isDisallowed(url: string, disallowed: string[]): boolean {
+export function isDisallowed(url: string, disallowed: string[]): boolean {
   if (!disallowed.length) return false;
   let path: string;
   try {
@@ -706,6 +706,34 @@ export async function pollSitemap(
 }
 
 /** Parse the Disallow rules that apply to everyone from a robots.txt. */
+/**
+ * Can a product page's stock status be read from here at all?
+ *
+ * This is the whole restock question. If a page answers, "out of stock"
+ * turning into "in stock" is exactly the signal wanted. Their edge has
+ * refused hosted requests before, but that was a conclusion about one moment,
+ * and the sitemap taught us not to trust that kind of conclusion, so this
+ * asks again, once an hour, for one page, and reports what came back.
+ */
+export async function probeProductPage(
+  url: string,
+  disallowed: string[],
+): Promise<string> {
+  if (isDisallowed(url, disallowed)) return "stock check: robots.txt disallows the product pages";
+  try {
+    const got = await grabConditional(url, 9000, 0);
+    const body = got.body;
+    const lower = body.toLowerCase();
+    const signals = ["out of stock", "in stock", "add to cart", "sold out", "availability", "notify me"]
+      .filter((w) => lower.includes(w));
+    return signals.length
+      ? `stock check: the page answered (${body.length} bytes) and mentions ${signals.join(", ")}`
+      : `stock check: the page answered (${body.length} bytes) but says nothing about stock`;
+  } catch (err) {
+    return `stock check: ${String(err).slice(0, 40)}`;
+  }
+}
+
 export function parseDisallowed(robots: string): string[] {
   const rules: string[] = [];
   let appliesToUs = false;
