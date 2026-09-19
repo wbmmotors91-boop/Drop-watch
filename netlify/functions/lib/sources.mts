@@ -324,3 +324,139 @@ export async function pollUpc(
   }
   return out;
 }
+
+// --------------------------------------------------------------------------
+// Pokemon Center's own sitemap
+// --------------------------------------------------------------------------
+
+/**
+ * Pokemon Center refuses hosted requests for its HTML pages, but it serves
+ * robots.txt and its sitemaps to anyone. The sitemap is their own published
+ * list of what exists on the site, so a product URL appearing there is
+ * Pokemon Center themselves saying a new SKU exists. That is first-party and
+ * worth far more than someone's word for it on a forum.
+ *
+ * This reads the published index, nothing hidden and nothing evaded.
+ */
+
+export function extractLocs(xml: string): string[] {
+  return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) =>
+    m[1].replace(/&amp;/g, "&").trim(),
+  );
+}
+
+/** The slug carries the product name, which is what we match against. */
+export function slugWords(url: string): string {
+  const tail = url.split("?")[0].split("/").filter(Boolean).pop() || "";
+  return decodeURIComponent(tail).replace(/-/g, " ");
+}
+
+export function titleFromUrl(url: string): string {
+  const words = slugWords(url);
+  return words.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export type SitemapOptions = {
+  indexUrl: string;
+  /** Only follow child sitemaps whose URL matches this. */
+  childPattern?: string;
+  /** Hard cap on child sitemaps fetched per cycle. */
+  maxChildren?: number;
+  /** Paths robots.txt forbids; anything under one of these is skipped. */
+  disallowed?: string[];
+};
+
+function isDisallowed(url: string, disallowed: string[]): boolean {
+  if (!disallowed.length) return false;
+  let path: string;
+  try {
+    path = new URL(url).pathname;
+  } catch {
+    return true;
+  }
+  return disallowed.some((rule) => rule && path.startsWith(rule));
+}
+
+export async function pollSitemap(
+  opts: SitemapOptions,
+  include: string[],
+  exclude: string[],
+  notes: string[],
+): Promise<Item[]> {
+  const { indexUrl, childPattern = "product", maxChildren = 2, disallowed = [] } = opts;
+
+  let indexXml: string;
+  try {
+    indexXml = await grab(indexUrl, 9000);
+  } catch (err) {
+    notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
+    return [];
+  }
+
+  const allChildren = extractLocs(indexXml);
+  if (!allChildren.length) {
+    notes.push("Pokémon Center sitemap: the index listed no child sitemaps");
+    return [];
+  }
+
+  // Prefer a child sitemap that names itself after products, but do not
+  // depend on that naming: if nothing matches, scan the first few anyway and
+  // let the keyword filter decide. The note records what was actually there,
+  // so the real layout is visible from the app rather than guessed at.
+  const preferred = allChildren.filter((u) => u.toLowerCase().includes(childPattern));
+  const children = preferred.length ? preferred : allChildren;
+  notes.push(
+    `Pokémon Center index: ${allChildren.length} child sitemaps [${allChildren
+      .map((u) => u.split("/").pop())
+      .slice(0, 8)
+      .join(", ")}]`,
+  );
+
+  const out: Item[] = [];
+  let scanned = 0;
+  for (const child of children.slice(0, maxChildren)) {
+    if (isDisallowed(child, disallowed)) {
+      notes.push(`Pokemon Center sitemap: robots.txt disallows ${child}`);
+      continue;
+    }
+    try {
+      await sleep(SAME_HOST_GAP_MS);
+      const xml = await grab(child, 9000);
+      const urls = extractLocs(xml);
+      scanned += urls.length;
+      for (const url of urls) {
+        if (isDisallowed(url, disallowed)) continue;
+        const name = slugWords(url);
+        if (!matches(name, include, exclude)) continue;
+        out.push({
+          key: `pc:${url}`,
+          title: titleFromUrl(url),
+          source: "Pokémon Center",
+          url,
+          detail: "listed on Pokémon Center's own sitemap",
+        });
+      }
+    } catch (err) {
+      notes.push(`Pokemon Center sitemap child: ${String(err).slice(0, 60)}`);
+    }
+  }
+
+  notes.push(`Pokémon Center: ${scanned} URLs scanned, ${out.length} match`);
+  return out;
+}
+
+/** Parse the Disallow rules that apply to everyone from a robots.txt. */
+export function parseDisallowed(robots: string): string[] {
+  const rules: string[] = [];
+  let appliesToUs = false;
+  for (const raw of robots.split(/\r?\n/)) {
+    const line = raw.split("#")[0].trim();
+    if (!line) continue;
+    const [rawKey, ...rest] = line.split(":");
+    const key = rawKey.trim().toLowerCase();
+    const value = rest.join(":").trim();
+    if (key === "user-agent") appliesToUs = value === "*";
+    else if (key === "disallow" && appliesToUs && value) rules.push(value);
+  }
+  return rules;
+}

@@ -1,4 +1,7 @@
-import { parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds } from "./sources.mts";
+import {
+  parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
+  extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap,
+} from "./sources.mts";
 
 let fails = 0;
 const check = (name: string, got: any, want: any) => {
@@ -165,5 +168,62 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   globalThis.fetch = realFetch;
 }
 
-console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering)");
+// --- sitemap reading ------------------------------------------------------
+{
+  console.log("sitemap parsing");
+  const INDEX = `<?xml version="1.0"?><sitemapindex><sitemap><loc>https://www.pokemoncenter.com/sitemaps/pages.xml</loc></sitemap><sitemap><loc>https://www.pokemoncenter.com/sitemaps/products-1.xml</loc></sitemap></sitemapindex>`;
+  const PRODUCTS = `<?xml version="1.0"?><urlset>
+    <url><loc>https://www.pokemoncenter.com/en-ca/product/100-1/delta-reign-elite-trainer-box</loc></url>
+    <url><loc>https://www.pokemoncenter.com/en-ca/product/100-2/pikachu-plush-keychain</loc></url>
+    <url><loc>https://www.pokemoncenter.com/en-ca/product/100-3/mega-rayquaza-booster-box</loc></url>
+    <url><loc>https://www.pokemoncenter.com/carts/secret</loc></url>
+  </urlset>`;
+
+  check("index locs", extractLocs(INDEX).length, 2);
+  check("slug becomes words", slugWords("https://x/en-ca/product/100-1/delta-reign-elite-trainer-box"), "delta reign elite trainer box");
+  check("title cased", titleFromUrl("https://x/p/mega-rayquaza-booster-box"), "Mega Rayquaza Booster Box");
+
+  const ROBOTS = `# comment\nUser-agent: *\nDisallow: /carts\nDisallow: /cortex\n\nUser-agent: BadBot\nDisallow: /`;
+  const rules = parseDisallowed(ROBOTS);
+  check("only the wildcard block applies", rules, ["/carts", "/cortex"]);
+
+  const realFetch = globalThis.fetch;
+  const asked: string[] = [];
+  globalThis.fetch = (async (u: any) => {
+    const url = String(u);
+    asked.push(url);
+    const body = url.includes("products-1") ? PRODUCTS : INDEX;
+    return { ok: true, status: 200, text: async () => body } as any;
+  }) as any;
+
+  const notes: string[] = [];
+  const items = await pollSitemap(
+    { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 2, disallowed: rules },
+    ["elite trainer box", "booster box"],
+    [],
+    notes,
+  );
+
+  check("only the product sitemap was followed", asked.filter((u) => u.includes("pages.xml")).length, 0);
+  check("two sealed products matched", items.length, 2);
+  check("plush was filtered out", items.some((i) => i.title.includes("Plush")), false);
+  check("robots-disallowed path skipped", items.some((i) => i.url.includes("/carts")), false);
+  check("source is named for the user", items[0].source, "Pokémon Center");
+  check("url kept intact", items[0].url, "https://www.pokemoncenter.com/en-ca/product/100-1/delta-reign-elite-trainer-box");
+
+  // If robots ever forbids the product sitemap, we must stop by ourselves.
+  const blockedNotes: string[] = [];
+  const blocked = await pollSitemap(
+    { indexUrl: "https://www.pokemoncenter.com/sitemap.xml", childPattern: "product", maxChildren: 2, disallowed: ["/sitemaps"] },
+    ["booster box"],
+    [],
+    blockedNotes,
+  );
+  check("disallowed child sitemap is not fetched", blocked.length, 0);
+  check("and it says why", blockedNotes.some((n) => n.includes("robots.txt disallows")), true);
+
+  globalThis.fetch = realFetch;
+}
+
+console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");
 process.exit(fails ? 1 : 0);

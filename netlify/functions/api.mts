@@ -1,5 +1,5 @@
 import type { Config, Context } from "@netlify/functions";
-import { grab, type Item } from "./lib/sources.mjs";
+import type { Item } from "./lib/sources.mjs";
 import { env, readJson, writeJson, pushAll, type Meta, type Sub } from "./lib/store.mjs";
 import { runPass } from "./lib/pass.mjs";
 import { FEEDS, RETAILERS } from "./lib/config.mjs";
@@ -33,35 +33,9 @@ export default async (req: Request, _context: Context) => {
       items: items.slice(0, 60),
       lastPoll: meta.lastPoll || null,
       lastUpcPoll: meta.lastUpcPoll || null,
+      lastPcPoll: meta.lastPcPoll || null,
       notes: meta.lastNotes || [],
     });
-  }
-
-  if (route === "probe") {
-    // TEMPORARY. Does Pokemon Center answer a request from Netlify's network?
-    // It refuses this session's own fetcher, but that is a different network
-    // and the question is worth settling with evidence rather than assumption.
-    // Reports status codes only, one request each, then gets deleted.
-    const extra = new URL(req.url).searchParams.get("u");
-    const targets = extra
-      ? [extra]
-      : ["https://www.pokemoncenter.com/robots.txt", "https://www.pokemoncenter.com/sitemap.xml"];
-    const results = await Promise.all(
-      targets.map(async (url) => {
-        try {
-          const text = await grab(url, 9000, 0);
-          return {
-            url,
-            ok: true,
-            length: text.length,
-            body: text.length <= 4000 ? text : text.slice(0, 4000) + " …TRUNCATED",
-          };
-        } catch (err) {
-          return { url, ok: false, error: String(err).slice(0, 80) };
-        }
-      }),
-    );
-    return json({ results });
   }
 
   if (req.method !== "POST") return json({ error: "not found" }, 404);
@@ -101,7 +75,7 @@ export default async (req: Request, _context: Context) => {
       return json({ ok: false, wait: Math.ceil((MANUAL_COOLDOWN_MS - since) / 1000) }, 429);
     }
     await writeJson("meta", { ...meta, lastManualCheck: Date.now() });
-    const result = await runPass("fast");
+    const result = await runPass("pc");
     return json({ ok: true, ...result });
   }
 

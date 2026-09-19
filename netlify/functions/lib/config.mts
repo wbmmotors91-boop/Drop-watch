@@ -98,6 +98,24 @@ export const RETAILERS: Retailer[] = [
   },
 ];
 
+/**
+ * Pokémon Center's own sitemap.
+ *
+ * Their HTML pages refuse hosted requests with a 403, but robots.txt and the
+ * sitemaps are served to anyone, and the sitemap is their own published list
+ * of what exists. A product URL appearing there is Pokémon Center saying a
+ * new SKU exists, which beats anyone's word for it.
+ *
+ * The poller reads robots.txt first and obeys it, so if they ever disallow
+ * these paths it stops on its own.
+ */
+export const POKEMON_CENTER = {
+  robotsUrl: "https://www.pokemoncenter.com/robots.txt",
+  indexUrl: "https://www.pokemoncenter.com/sitemap.xml",
+  childPattern: "product",
+  maxChildren: 2,
+};
+
 export const UPC_QUERIES = [
   "pokemon elite trainer box",
   "pokemon booster box",

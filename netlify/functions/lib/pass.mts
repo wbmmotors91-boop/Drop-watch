@@ -1,13 +1,14 @@
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { pollFeeds, pollRetailers, pollUpc } from "./sources.mjs";
+import { grab, parseDisallowed, pollFeeds, pollRetailers, pollSitemap, pollUpc } from "./sources.mjs";
 import {
   FEEDS,
   KEYWORDS_EXCLUDE,
   KEYWORDS_INCLUDE,
   MAX_PUSH_PER_PASS,
   NEWS_REQUIRE_ANY,
+  POKEMON_CENTER,
   RETAILERS,
   UPC_QUERIES,
 } from "./config.mjs";
@@ -23,11 +24,34 @@ export type PassResult = {
   notes: string[];
 };
 
-export async function runPass(kind: "fast" | "upc"): Promise<PassResult> {
+export type PassKind = "pc" | "news" | "upc";
+
+export async function runPass(kind: PassKind): Promise<PassResult> {
   const notes: string[] = [];
   let items: Item[] = [];
 
-  if (kind === "fast") {
+  if (kind === "pc") {
+    // Read their rules before their data, and obey whatever they say.
+    let disallowed: string[] = [];
+    try {
+      disallowed = parseDisallowed(await grab(POKEMON_CENTER.robotsUrl, 8000));
+    } catch (err) {
+      notes.push(`Pokémon Center robots.txt: ${String(err).slice(0, 60)}`);
+      notes.push("skipping the sitemap this cycle rather than guessing the rules");
+      return { checked: ["Pokémon Center"], found: 0, notified: 0, seeded: false, notes };
+    }
+    items = await pollSitemap(
+      {
+        indexUrl: POKEMON_CENTER.indexUrl,
+        childPattern: POKEMON_CENTER.childPattern,
+        maxChildren: POKEMON_CENTER.maxChildren,
+        disallowed,
+      },
+      KEYWORDS_INCLUDE,
+      KEYWORDS_EXCLUDE,
+      notes,
+    );
+  } else if (kind === "news") {
     const [feedItems, retailItems] = await Promise.all([
       pollFeeds(FEEDS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, NEWS_REQUIRE_ANY),
       pollRetailers(RETAILERS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes),
@@ -90,11 +114,17 @@ export async function runPass(kind: "fast" | "upc"): Promise<PassResult> {
     ...meta,
     seeded: meta.seeded || seededNow,
     lastNotes: notes,
-    ...(kind === "fast" ? { lastPoll: Date.now() } : { lastUpcPoll: Date.now() }),
+    ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
+    ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });
 
   return {
-    checked: kind === "fast" ? [...FEEDS, ...RETAILERS].map((s) => s.name) : ["UPC database"],
+    checked:
+      kind === "pc"
+        ? ["Pokémon Center"]
+        : kind === "news"
+          ? [...FEEDS, ...RETAILERS].map((s) => s.name)
+          : ["UPC database"],
     found: fresh.length,
     notified,
     seeded: seededNow,

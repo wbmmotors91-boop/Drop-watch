@@ -7,14 +7,22 @@ Installable from the browser, so there is nothing to keep running at home.
 
 ## Why it watches what it watches
 
-Pokémon Center's own site, and pokemon.com with it, sits behind Imperva and
-returns **403 to anything that is not a real browser on a home connection**.
-Verified against the US, Canadian and UK storefronts. Nothing hosted in a
-datacenter can read their stock pages, and the ways around that are bot
-evasion, which this deliberately does not do.
+Pokémon Center's **HTML pages** return 403 to anything hosted — verified from
+Netlify against the Canadian storefront and a category page. Their stock pages
+cannot be read from a server, and the ways around that are bot evasion, which
+this deliberately does not do.
 
-What it watches instead is everywhere a new product surfaces before or around
-the drop:
+But their **robots.txt and sitemaps are served to anyone**, and that turns out
+to be the signal worth having:
+
+- **Pokémon Center's own sitemap** — their published list of what exists on
+  the site. A product URL appearing there is Pokémon Center themselves saying
+  a new SKU exists, usually before the page is buyable. First-party, not
+  someone's word for it. The poller reads robots.txt first and obeys it, so if
+  they ever disallow these paths it stops on its own.
+
+Around that sit the second-hand sources, which are faster to talk but
+sometimes wrong:
 
 - **TCG news feeds** — Dexerto plus several Reddit search feeds, including one
   scoped to the Canadian deals subreddit. Reddit is often the fastest of the
@@ -44,9 +52,10 @@ public/                 the app itself, no build step
   sw.js                 service worker, receives pushes
 netlify/functions/
   api.mts               /api/state, subscribe, unsubscribe, test, check
-  poll.mts              every 5 minutes: news + retailers
+  poll.mts              every 5 minutes: Pokémon Center's sitemap
+  poll-news.mts         every 5 minutes, offset: feeds + retailers
   poll-upc.mts          every 3 hours: barcode lookups
-  lib/sources.mts       feed parsing, keyword matching, listing extraction
+  lib/sources.mts       sitemap, feed and listing readers, keyword matching
   lib/config.mts        the watch list and keywords, all in one place
   lib/pass.mts          one polling pass: fetch, diff, notify
   lib/store.mts         Netlify Blobs and web push
