@@ -65,8 +65,16 @@ async function loadState() {
   }
   state.publicKey = body.publicKey || "";
   renderFeed(body.items || []);
+  // Say plainly which sources can buzz the phone. The shelf sightings are
+  // people posting what they saw, so they belong in the list to read but must
+  // never look like something that will wake you up.
+  const pushes = body.pushSources || [];
   $("sources").innerHTML = (body.watching || [])
-    .map((s) => `<li>${escapeHtml(s)}</li>`)
+    .map((s) => {
+      const alerts = pushes.includes(s);
+      const label = escapeHtml(s) + (alerts ? " · alerts you" : "");
+      return `<li class="${alerts ? "alerts" : ""}">${label}</li>`;
+    })
     .join("");
 
   const last = body.lastPoll;

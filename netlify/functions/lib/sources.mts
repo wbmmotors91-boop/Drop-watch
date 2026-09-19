@@ -180,7 +180,14 @@ export function extractProducts(html: string, pattern: string, base: string): [s
   return [...seen.entries()];
 }
 
-export type Feed = { name: string; url: string };
+export type Feed = {
+  name: string;
+  url: string;
+  /** Replaces the shared product keywords for this feed alone. */
+  include?: string[];
+  /** Replaces the shared "something is happening" gate for this feed alone. */
+  requireAny?: string[];
+};
 export type Retailer = { name: string; url: string; pattern: string };
 
 /**
@@ -239,10 +246,15 @@ export async function pollFeeds(
       if (i > 0) await sleep(SAME_HOST_GAP_MS);
       try {
         const xml = await grab(feed.url, 6000);
+        // A feed may carry its own gates. The store-sighting feeds need a
+        // different question asked of them than the news feeds do: not "is
+        // this a product and is something happening to it" but "is this about
+        // a product at one of the stores he can actually drive to".
+        const feedInclude = feed.include ?? include;
+        const feedRequire = feed.requireAny ?? requireAny;
         const hits = parseFeed(xml, feed.name).filter((item) => {
           const text = `${item.title} ${item.detail || ""}`;
-          // Must name a product AND say something is happening to it.
-          return matches(text, include, exclude) && matches(text, requireAny, []);
+          return matches(text, feedInclude, exclude) && matches(text, feedRequire, []);
         });
         notes.push(`${feed.name}: ${hits.length} match`);
         found.push(...hits);

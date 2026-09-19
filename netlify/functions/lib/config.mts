@@ -55,6 +55,30 @@ export const KEYWORDS_EXCLUDE = [
   "what did i pull",
 ];
 
+/**
+ * Gates for the shelf-sighting feed.
+ *
+ * Looser on the product than the news feeds are, because someone who just saw
+ * a pallet go out writes "Walmart had pokemon boxes", not the product's full
+ * name. Tighter on the store, because a sighting is only useful to him if it
+ * names somewhere he can drive to.
+ */
+export const STORE_SIGHTING_PRODUCTS = [
+  "pokemon",
+  "pokémon",
+  "etb",
+  "elite trainer box",
+  "booster box",
+  "booster bundle",
+];
+
+export const STORE_SIGHTING_STORES = [
+  "walmart",
+  "superstore",
+  "real canadian superstore",
+  "rcss",
+];
+
 export const FEEDS: Feed[] = [
   { name: "Dexerto", url: "https://www.dexerto.com/pokemon/feed/" },
 
@@ -78,6 +102,31 @@ export const FEEDS: Feed[] = [
       "https://www.reddit.com/r/PokemonTCGDealsCanada/search.rss?restrict_sr=1&q=" +
       encodeURIComponent("booster box OR elite trainer box OR preorder") +
       "&sort=new&t=week",
+  },
+
+  // Walmart and Superstore shelf sightings.
+  //
+  // Neither chain publishes store-level stock anywhere a server can read, so
+  // the only thing that knows a Stoney Creek shelf has boxes on it is a person
+  // standing in front of it. This reads what those people post. Aaron's own
+  // verdict is that it is late and wrong most of the time, so it stays in the
+  // app to read and is never allowed to send a notification: PUSH_SOURCES is
+  // what enforces that, and Pokémon Center is the only name on it.
+  //
+  // Asked site-wide rather than in one subreddit, because these sightings land
+  // in local and provincial subs as often as in the Pokémon ones. The gates
+  // below then insist a post name both a store and the product.
+  {
+    name: "Walmart & Superstore sightings",
+    url:
+      "https://www.reddit.com/search.rss?q=" +
+      encodeURIComponent(
+        "(walmart OR superstore) pokemon " +
+          '(restock OR restocked OR "in stock" OR stocked OR found OR "on the shelf")',
+      ) +
+      "&sort=new&t=week",
+    include: STORE_SIGHTING_PRODUCTS,
+    requireAny: STORE_SIGHTING_STORES,
   },
 ];
 

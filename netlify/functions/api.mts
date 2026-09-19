@@ -2,7 +2,7 @@ import type { Config, Context } from "@netlify/functions";
 import type { Item } from "./lib/sources.mjs";
 import { env, readJson, writeJson, pushAll, type Meta, type Sub } from "./lib/store.mjs";
 import { runPass } from "./lib/pass.mjs";
-import { FEEDS, RETAILERS } from "./lib/config.mjs";
+import { FEEDS, PUSH_SOURCES, RETAILERS } from "./lib/config.mjs";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -29,7 +29,14 @@ export default async (req: Request, _context: Context) => {
     return json({
       publicKey: env("VAPID_PUBLIC_KEY"),
       pushConfigured: Boolean(env("VAPID_PRIVATE_KEY")),
-      watching: [...FEEDS, ...RETAILERS].map((s) => s.name).concat("UPC database"),
+      // Pokémon Center leads because it is the only source allowed to
+      // notify; the rest are there to read.
+      watching: ["Pokémon Center"]
+        .concat([...FEEDS, ...RETAILERS].map((s) => s.name))
+        .concat("UPC database"),
+      // So the app can show which sources are allowed to buzz him and which
+      // are only there to read.
+      pushSources: PUSH_SOURCES,
       items: items.slice(0, 60),
       lastPoll: meta.lastPoll || null,
       lastUpcPoll: meta.lastUpcPoll || null,

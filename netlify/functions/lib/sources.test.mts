@@ -289,5 +289,61 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   globalThis.fetch = realFetch;
 }
 
+
+// --- per-feed gates -------------------------------------------------------
+// The shelf-sighting feed asks a different question than the news feeds, so a
+// feed's own gates must apply to it alone and not leak onto its neighbours.
+{
+  console.log("per-feed gates");
+  const realFetch = globalThis.fetch;
+  const feedFor = (title: string) =>
+    `<rss><item><title>${title}</title><link>L-${title}</link><guid>G-${title}</guid></item></rss>`;
+
+  globalThis.fetch = (async (u: any) => {
+    const url = String(u);
+    const title = url.includes("sight")
+      ? "Walmart in Stoney Creek had pokemon boxes on the shelf"
+      : "Elite Trainer Box preorder live";
+    return { ok: true, status: 200, text: async () => feedFor(title) } as any;
+  }) as any;
+
+  const notes: string[] = [];
+  const items = await pollFeeds(
+    [
+      { name: "news", url: "https://news.example.com/a.rss" },
+      {
+        name: "sightings",
+        url: "https://sight.example.com/b.rss",
+        include: ["pokemon"],
+        requireAny: ["walmart", "superstore"],
+      },
+    ],
+    ["elite trainer box"],
+    [],
+    notes,
+    ["preorder"],
+  );
+
+  check("both feeds produced an item", items.length, 2);
+  check("the sighting came through its own gates", items.some((i) => i.source === "sightings"), true);
+  check("the news feed kept the shared gates", items.some((i) => i.source === "news"), true);
+
+  // A sighting that names no store must not pass, and the news gates must not
+  // rescue it.
+  globalThis.fetch = (async () =>
+    ({ ok: true, status: 200, text: async () => feedFor("pokemon boxes at some shop") }) as any) as any;
+  const storeless: string[] = [];
+  const none = await pollFeeds(
+    [{ name: "sightings", url: "https://sight.example.com/b.rss", include: ["pokemon"], requireAny: ["walmart", "superstore"] }],
+    ["elite trainer box"],
+    [],
+    storeless,
+    ["preorder"],
+  );
+  check("a sighting with no store is dropped", none.length, 0);
+
+  globalThis.fetch = realFetch;
+}
+
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");
 process.exit(fails ? 1 : 0);
