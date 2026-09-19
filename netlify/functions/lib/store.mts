@@ -10,6 +10,7 @@ export type Meta = {
   seeded?: boolean;
   lastPoll?: number;
   lastUpcPoll?: number;
+  lastManualCheck?: number;
   lastNotes?: string[];
 };
 

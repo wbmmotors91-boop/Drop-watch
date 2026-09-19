@@ -10,7 +10,12 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 
-/** A manual check is a courtesy button, not a way to hammer other people's sites. */
+/**
+ * A manual check is a courtesy button, not a way to hammer other people's
+ * sites. The cooldown is tracked separately from the scheduled poll: sharing
+ * lastPoll would mean the button is almost always inside the 5 minute
+ * schedule's shadow and refuses every time, which reads as broken.
+ */
 const MANUAL_COOLDOWN_MS = 60_000;
 
 export default async (req: Request, _context: Context) => {
@@ -64,10 +69,11 @@ export default async (req: Request, _context: Context) => {
 
   if (route === "check") {
     const meta = await readJson<Meta>("meta", {});
-    const since = Date.now() - (meta.lastPoll || 0);
+    const since = Date.now() - (meta.lastManualCheck || 0);
     if (since < MANUAL_COOLDOWN_MS) {
       return json({ ok: false, wait: Math.ceil((MANUAL_COOLDOWN_MS - since) / 1000) }, 429);
     }
+    await writeJson("meta", { ...meta, lastManualCheck: Date.now() });
     const result = await runPass("fast");
     return json({ ok: true, ...result });
   }
