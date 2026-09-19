@@ -24,6 +24,21 @@ const ROBOTS_MAX_AGE_MS = 60 * 60 * 1000;
 /** How often to re-test whether a product page answers a hosted request. */
 const STOCK_PROBE_MAX_AGE_MS = 60 * 60 * 1000;
 
+/**
+ * How long to leave Pokémon Center alone after they refuse us.
+ *
+ * Doubling from five minutes to an hour. Being refused is them saying we are
+ * asking too often, and the only correct answer to that is to ask less, not to
+ * keep knocking on the same schedule.
+ */
+const BACKOFF_BASE_MS = 5 * 60 * 1000;
+const BACKOFF_MAX_MS = 60 * 60 * 1000;
+
+export function backoffFor(failures: number): number {
+  if (failures < 1) return 0;
+  return Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS);
+}
+
 export type PassResult = {
   checked: string[];
   found: number;
@@ -41,6 +56,8 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let newsCursor: number | undefined;
   let robots: { rules: string[]; at: number } | undefined;
   let stockProbedAt: number | undefined;
+  let pcFailures: number | undefined;
+  let pcBlockedUntil: number | undefined;
 
   if (kind === "pc") {
     // Read their rules before their data, and obey whatever they say. Their
@@ -48,6 +65,16 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     // is just another request against their server; an hour is fresh enough
     // to notice a change long before it matters.
     const priorMeta = await readJson<Meta>("meta", {});
+
+    // They refused us recently, so stay away until the backoff expires.
+    // Knocking again on schedule is what turns an intermittent refusal into a
+    // standing one.
+    if (priorMeta.pcBlockedUntil && Date.now() < priorMeta.pcBlockedUntil) {
+      const mins = Math.ceil((priorMeta.pcBlockedUntil - Date.now()) / 60000);
+      notes.push(`Pokémon Center refused us, backing off for another ${mins} min`);
+      return { checked: ["Pokémon Center"], found: 0, notified: 0, seeded: false, notes };
+    }
+
     const cached = priorMeta.robots;
     let disallowed: string[] = [];
     if (cached && Date.now() - cached.at < ROBOTS_MAX_AGE_MS) {
@@ -80,6 +107,15 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       notes,
     );
     items = sitemap.items;
+
+    if (sitemap.blocked) {
+      pcFailures = (priorMeta.pcFailures || 0) + 1;
+      pcBlockedUntil = Date.now() + backoffFor(pcFailures);
+      notes.push(`backing off ${Math.round(backoffFor(pcFailures) / 60000)} min before asking again`);
+    } else if (sitemap.items.length || sitemap.allUnchanged) {
+      pcFailures = 0;
+      pcBlockedUntil = 0;
+    }
     // Remember the child sitemaps so a challenged index does not stop the watch.
     if (sitemap.children.length) pcChildren = sitemap.children;
 
@@ -218,6 +254,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(robots ? { robots } : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
+    ...(pcFailures === undefined ? {} : { pcFailures, pcBlockedUntil }),
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
     ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });

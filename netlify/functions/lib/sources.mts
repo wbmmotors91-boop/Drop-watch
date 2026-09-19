@@ -529,6 +529,8 @@ export type SitemapResult = {
   validators: Record<string, { etag: string; lastModified: string }>;
   /** True when every child answered 304, so nothing was re-read. */
   allUnchanged: boolean;
+  /** True when they refused us outright, which means back off, not retry. */
+  blocked: boolean;
 };
 
 export function isDisallowed(url: string, disallowed: string[]): boolean {
@@ -564,6 +566,7 @@ async function scanChildren(
   let withLastmod = 0;
   let read = 0;
   let unchanged = 0;
+  let blocked = false;
 
   for (const child of children.slice(0, maxChildren)) {
     if (isDisallowed(child, disallowed)) {
@@ -602,6 +605,7 @@ async function scanChildren(
         });
       }
     } catch (err) {
+      if (String(err).includes("403")) blocked = true;
       notes.push(`Pokemon Center sitemap child: ${String(err).slice(0, 60)}`);
     }
   }
@@ -624,6 +628,7 @@ async function scanChildren(
     withLastmod,
     validators: nextValidators,
     allUnchanged: unchanged > 0 && read === 0,
+    blocked,
   };
 }
 
@@ -651,9 +656,16 @@ export async function pollSitemap(
     nextIndexValidator.etag = got.etag || validators[indexUrl]?.etag || "";
     nextIndexValidator.lastModified = got.lastModified || validators[indexUrl]?.lastModified || "";
   } catch (err) {
+    const refused = String(err).includes("403");
     notes.push(`Pokemon Center sitemap: ${String(err).slice(0, 60)}`);
-    if (!knownChildren.length)
-      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false };
+    // A refusal covers the whole host, so trying the children only spends
+    // another request proving the same thing.
+    if (refused || !knownChildren.length) {
+      return {
+        items: [], children: [], lastmods: {}, withLastmod: 0,
+        validators: {}, allUnchanged: false, blocked: refused,
+      };
+    }
     notes.push(`Pokémon Center: trying ${knownChildren.length} child sitemaps from an earlier cycle`);
     return {
       ...(await scanChildren(knownChildren, opts, include, exclude, notes)),
@@ -666,7 +678,7 @@ export async function pollSitemap(
   if (indexUnchanged) {
     if (!knownChildren.length) {
       notes.push("Pokémon Center: index unchanged but no child sitemaps remembered yet");
-      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false };
+      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false };
     }
     const scanned = await scanChildren(knownChildren, opts, include, exclude, notes);
     return {
@@ -681,7 +693,7 @@ export async function pollSitemap(
     notes.push(
       `Pokémon Center: challenged this cycle, standing down until the next one (${describeBody(indexXml)})`,
     );
-    return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false };
+    return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false };
   }
 
   // Prefer a child sitemap that names itself after products, but do not

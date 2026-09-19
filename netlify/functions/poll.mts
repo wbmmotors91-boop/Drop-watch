@@ -8,12 +8,14 @@ import { runPass } from "./lib/pass.mjs";
  * and the one that needs the most time: robots.txt, then the index, then a
  * child sitemap, spaced out so we are never hammering them.
  *
- * Every minute, which is only reasonable because almost every check now costs
- * two conditional requests answered 304. The full list is downloaded only when
- * it has actually changed, their robots.txt is re-read hourly rather than
- * every cycle, and a blocked check stands down until the next one. Without those
- * three things a one-minute cadence would mean more blocking and fewer drops
- * caught, not more.
+ * Every five minutes, not every minute.
+ *
+ * One minute was tried, with conditional requests making most checks nearly
+ * free, and Pokemon Center answered 403 to everything within the hour. Cheap
+ * requests are still requests, and their edge counts requests. When they
+ * refuse, the pass now backs off for five minutes, then ten, then twenty, up
+ * to an hour, because being refused is them saying we ask too often and the
+ * only correct answer is to ask less.
  */
 export default async () => {
   const result = await runPass("pc");
@@ -21,5 +23,5 @@ export default async () => {
 };
 
 export const config: Config = {
-  schedule: "* * * * *",
+  schedule: "*/5 * * * *",
 };
