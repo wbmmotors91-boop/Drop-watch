@@ -21,21 +21,44 @@ const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
-/** Scheduled functions get 30 seconds total, so every fetch is on a short leash. */
-async function grab(url: string, ms = 7000): Promise<string> {
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), ms);
-  try {
-    const res = await fetch(url, {
-      signal: ctl.signal,
-      headers: { "User-Agent": UA, Accept: "*/*", "Accept-Language": "en-CA,en;q=0.9" },
-      redirect: "follow",
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
-  } finally {
-    clearTimeout(timer);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Statuses worth one more try. A 403 or 404 will say the same thing twice. */
+function worthRetrying(status: number): boolean {
+  return status === 429 || status >= 500;
+}
+
+/**
+ * Fetch a URL as text.
+ *
+ * Scheduled functions get 30 seconds in total, so every request is on a short
+ * leash and gets at most one retry. Reddit in particular rate-limits hosted
+ * IPs and then serves the same feed happily a second later.
+ */
+export async function grab(url: string, ms = 7000, retries = 1): Promise<string> {
+  let lastError: Error = new Error("never attempted");
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) await sleep(1200);
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), ms);
+    try {
+      const res = await fetch(url, {
+        signal: ctl.signal,
+        headers: { "User-Agent": UA, Accept: "*/*", "Accept-Language": "en-CA,en;q=0.9" },
+        redirect: "follow",
+      });
+      if (res.ok) return await res.text();
+      lastError = new Error(`HTTP ${res.status}`);
+      if (!worthRetrying(res.status)) break;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    } finally {
+      clearTimeout(timer);
+    }
   }
+
+  throw lastError;
 }
 
 export function stripHtml(s: string): string {

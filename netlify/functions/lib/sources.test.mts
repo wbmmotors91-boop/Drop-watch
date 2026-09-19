@@ -1,4 +1,4 @@
-import { parseFeed, matches, extractProducts, stripHtml } from "./sources.mts";
+import { parseFeed, matches, extractProducts, stripHtml, grab } from "./sources.mts";
 
 let fails = 0;
 const check = (name: string, got: any, want: any) => {
@@ -78,5 +78,43 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("neither stays quiet", both("Worlds recap thread"), false);
 }
 
-console.log(fails ? `\n${fails} failed` : "\nall passed (including news gate)");
+// --- grab retries ---------------------------------------------------------
+{
+  console.log("grab retry behaviour");
+  const realFetch = globalThis.fetch;
+  const calls: string[] = [];
+  const respond = (statuses: number[]) => {
+    let i = 0;
+    globalThis.fetch = (async (u: any) => {
+      calls.push(String(u));
+      const status = statuses[Math.min(i++, statuses.length - 1)];
+      return { ok: status >= 200 && status < 300, status, text: async () => "<rss/>" } as any;
+    }) as any;
+  };
+
+  calls.length = 0;
+  respond([429, 200]);
+  check("retries a 429 and succeeds", await grab("https://x/1", 100), "<rss/>");
+  check("took two attempts", calls.length, 2);
+
+  calls.length = 0;
+  respond([403]);
+  await grab("https://x/2", 100).then(
+    () => check("403 should reject", true, false),
+    (e) => check("403 rejects without retrying", e.message, "HTTP 403"),
+  );
+  check("403 tried once only", calls.length, 1);
+
+  calls.length = 0;
+  respond([500, 500]);
+  await grab("https://x/3", 100).then(
+    () => check("persistent 500 should reject", true, false),
+    (e) => check("gives up after the retry", e.message, "HTTP 500"),
+  );
+  check("500 tried twice", calls.length, 2);
+
+  globalThis.fetch = realFetch;
+}
+
+console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries)");
 process.exit(fails ? 1 : 0);

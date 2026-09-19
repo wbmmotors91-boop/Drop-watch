@@ -56,11 +56,7 @@ export const KEYWORDS_EXCLUDE = [
 ];
 
 export const FEEDS: Feed[] = [
-  { name: "PokéBeach", url: "https://www.pokebeach.com/feed" },
   { name: "Dexerto", url: "https://www.dexerto.com/pokemon/feed/" },
-  { name: "PokéGuardian", url: "https://www.pokeguardian.com/blog?format=rss" },
-  { name: "r/PokeInvesting", url: "https://www.reddit.com/r/PokeInvesting/new/.rss" },
-  { name: "r/pkmntcg", url: "https://www.reddit.com/r/pkmntcg/new/.rss" },
   {
     name: "Reddit drop chatter",
     url:
@@ -68,24 +64,32 @@ export const FEEDS: Feed[] = [
       encodeURIComponent('"pokemon center" (restock OR preorder OR drop OR live)') +
       "&sort=new&t=day",
   },
+  {
+    name: "Reddit Canada deals",
+    url:
+      "https://www.reddit.com/r/PokemonTCGDealsCanada/search.rss?restrict_sr=1&q=" +
+      encodeURIComponent("booster box OR elite trainer box OR preorder") +
+      "&sort=new&t=week",
+  },
+  {
+    name: "Reddit TCG preorders",
+    url:
+      "https://www.reddit.com/search.rss?q=" +
+      encodeURIComponent('"elite trainer box" OR "booster box" (preorder OR restock)') +
+      "&sort=new&t=day",
+  },
 ];
 
 /**
  * Canadian retailers that often list a SKU before Pokémon Center posts it.
- * Some of these block datacenter traffic too. The poller records which ones
- * answered so the app can show it rather than failing silently.
+ *
+ * This list is short because most of them block hosted traffic the same way
+ * Pokémon Center does: EB Games answers 403 and Toys R Us's search path 404s.
+ * The poller records what each source returned, so the app shows which ones
+ * answered rather than failing silently. Add candidates freely — a dead one
+ * costs a logged line, not a missed drop.
  */
 export const RETAILERS: Retailer[] = [
-  {
-    name: "EB Games CA",
-    url: "https://www.ebgames.ca/search?q=pokemon%20elite%20trainer%20box",
-    pattern: "/(product|Games|Toys)/",
-  },
-  {
-    name: "Toys R Us CA",
-    url: "https://www.toysrus.ca/en/search?q=pokemon+trading+card",
-    pattern: "/product/|/en/.*-\\d{6,}",
-  },
   {
     name: "Indigo",
     url: "https://www.indigo.ca/en-ca/search?q=pokemon+elite+trainer+box",

@@ -16,17 +16,24 @@ evasion, which this deliberately does not do.
 What it watches instead is everywhere a new product surfaces before or around
 the drop:
 
-- **TCG news feeds** — PokéBeach, Dexerto, PokéGuardian, and Reddit search and
-  subreddit feeds, which are often the fastest of the lot.
-- **Canadian retailer listings** — EB Games, Toys R Us, Indigo. A SKU going up
-  at any of them is a strong signal the same product is about to appear at
-  Pokémon Center.
+- **TCG news feeds** — Dexerto plus several Reddit search feeds, including one
+  scoped to the Canadian deals subreddit. Reddit is often the fastest of the
+  lot.
+- **Canadian retailer listings** — Indigo today. A SKU going up at a retailer
+  is a strong signal the same product is about to appear at Pokémon Center.
 - **Barcode databases** — new Pokémon UPCs, which confirm a product exists even
   before anyone lists it.
 
 Announced preorders typically sit up for fifteen to sixty minutes, which is the
 window this is built to catch. Surprise restocks get no advance warning from
 anyone, including this.
+
+The source list is shorter than it first looks because plenty of sites turn a
+hosted request away: PokéBeach and EB Games answer 403, Toys R Us's search
+path 404s, and Reddit's per-subreddit feeds rate-limit hosted IPs even when its
+search feeds answer fine. Each poll records what every source returned and the
+app shows it, so a source going quiet is visible rather than silent. Adding a
+candidate that turns out to be blocked costs a logged line, not a missed drop.
 
 ## Layout
 
