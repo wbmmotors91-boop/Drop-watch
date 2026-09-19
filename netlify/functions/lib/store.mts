@@ -13,6 +13,7 @@ export type Meta = {
   lastPcPoll?: number;
   lastManualCheck?: number;
   lastNotes?: string[];
+  notesByKind?: Record<string, string[]>;
 };
 
 /**

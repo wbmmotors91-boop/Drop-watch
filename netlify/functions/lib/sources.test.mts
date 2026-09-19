@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap,
+  extractLocs, slugWords, titleFromUrl, parseDisallowed, pollSitemap, regionalise,
 } from "./sources.mts";
 
 let fails = 0;
@@ -209,6 +209,19 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("plush was filtered out", items.some((i) => i.title.includes("Plush")), false);
   check("robots-disallowed path skipped", items.some((i) => i.url.includes("/carts")), false);
   check("source is named for the user", items[0].source, "Pokémon Center");
+
+  console.log("regional links");
+  check(
+    "region prefix added",
+    regionalise("https://www.pokemoncenter.com/product/10-1/x", "en-ca"),
+    "https://www.pokemoncenter.com/en-ca/product/10-1/x",
+  );
+  check(
+    "existing region left alone",
+    regionalise("https://www.pokemoncenter.com/en-gb/product/10-1/x", "en-ca"),
+    "https://www.pokemoncenter.com/en-gb/product/10-1/x",
+  );
+  check("no region is a no-op", regionalise("https://x/y", ""), "https://x/y");
   check("url kept intact", items[0].url, "https://www.pokemoncenter.com/en-ca/product/100-1/delta-reign-elite-trainer-box");
 
   // If robots ever forbids the product sitemap, we must stop by ourselves.

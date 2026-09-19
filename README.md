@@ -22,7 +22,10 @@ to be the signal worth having:
   they ever disallow these paths it stops on its own.
 
 Around that sit the second-hand sources, which are faster to talk but
-sometimes wrong:
+sometimes wrong. **Only Pokémon Center notifies you.** Everything else shows
+in the app to read, because a forum post saying a drop happened is worth
+reading and not worth waking someone up for. `PUSH_SOURCES` in `lib/config.mts`
+decides that.
 
 - **TCG news feeds** — Dexerto plus several Reddit search feeds, including one
   scoped to the Canadian deals subreddit. Reddit is often the fastest of the

@@ -35,6 +35,7 @@ export default async (req: Request, _context: Context) => {
       lastUpcPoll: meta.lastUpcPoll || null,
       lastPcPoll: meta.lastPcPoll || null,
       notes: meta.lastNotes || [],
+      notesByKind: meta.notesByKind || {},
     });
   }
 

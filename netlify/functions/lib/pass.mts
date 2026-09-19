@@ -9,6 +9,7 @@ import {
   MAX_PUSH_PER_PASS,
   NEWS_REQUIRE_ANY,
   POKEMON_CENTER,
+  PUSH_SOURCES,
   RETAILERS,
   UPC_QUERIES,
 } from "./config.mjs";
@@ -45,6 +46,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         indexUrl: POKEMON_CENTER.indexUrl,
         childPattern: POKEMON_CENTER.childPattern,
         maxChildren: POKEMON_CENTER.maxChildren,
+        region: POKEMON_CENTER.region,
         disallowed,
       },
       KEYWORDS_INCLUDE,
@@ -96,7 +98,9 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         : "no source answered, staying unseeded so the next run does not flood you",
     );
   } else if (fresh.length) {
-    const batch = fresh.slice(0, MAX_PUSH_PER_PASS);
+    // Everything lands in the app; only the authoritative sources buzz.
+    const worthPushing = fresh.filter((i) => PUSH_SOURCES.includes(i.source));
+    const batch = worthPushing.slice(0, MAX_PUSH_PER_PASS);
     for (const item of batch) {
       const bits = [item.upc ? `UPC ${item.upc}` : "", `on ${item.source}`]
         .filter(Boolean)
@@ -104,8 +108,8 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       const res = await pushAll(item.title.slice(0, 90), bits, item.url);
       notified += res.sent;
     }
-    if (fresh.length > batch.length) {
-      const extra = fresh.length - batch.length;
+    if (worthPushing.length > batch.length) {
+      const extra = worthPushing.length - batch.length;
       await pushAll(`+${extra} more new listings`, "Open the app for the full list.", "/");
     }
   }
@@ -114,6 +118,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...meta,
     seeded: meta.seeded || seededNow,
     lastNotes: notes,
+    notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
     ...(kind === "upc" ? { lastUpcPoll: Date.now() } : { lastPoll: Date.now() }),
     ...(kind === "pc" ? { lastPcPoll: Date.now() } : {}),
   });

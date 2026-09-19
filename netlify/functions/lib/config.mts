@@ -114,7 +114,17 @@ export const POKEMON_CENTER = {
   indexUrl: "https://www.pokemoncenter.com/sitemap.xml",
   childPattern: "product",
   maxChildren: 2,
+  region: "en-ca",
 };
+
+/**
+ * Only these sources are allowed to buzz a phone.
+ *
+ * Everything else still shows in the app, but Pokémon Center's own sitemap is
+ * the one that is actually authoritative. A forum post saying a drop happened
+ * is worth reading, not worth a notification.
+ */
+export const PUSH_SOURCES = ["Pokémon Center"];
 
 export const UPC_QUERIES = [
   "pokemon elite trainer box",

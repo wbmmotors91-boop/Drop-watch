@@ -356,8 +356,29 @@ export function titleFromUrl(url: string): string {
   return words.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/**
+ * Point a canonical product URL at a regional storefront.
+ *
+ * The sitemap lists the unprefixed path. Aaron shops the Canadian store, and
+ * landing straight on /en-ca saves a redirect and a region prompt when every
+ * second counts.
+ */
+export function regionalise(url: string, region: string): string {
+  if (!region) return url;
+  try {
+    const u = new URL(url);
+    if (/^\/[a-z]{2}-[a-z]{2}\//i.test(u.pathname)) return url;
+    u.pathname = `/${region}${u.pathname}`;
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 export type SitemapOptions = {
   indexUrl: string;
+  /** Storefront prefix to put on product links, e.g. "en-ca". */
+  region?: string;
   /** Only follow child sitemaps whose URL matches this. */
   childPattern?: string;
   /** Hard cap on child sitemaps fetched per cycle. */
@@ -383,7 +404,13 @@ export async function pollSitemap(
   exclude: string[],
   notes: string[],
 ): Promise<Item[]> {
-  const { indexUrl, childPattern = "product", maxChildren = 2, disallowed = [] } = opts;
+  const {
+    indexUrl,
+    childPattern = "product",
+    maxChildren = 2,
+    disallowed = [],
+    region = "",
+  } = opts;
 
   let indexXml: string;
   try {
@@ -429,10 +456,11 @@ export async function pollSitemap(
         const name = slugWords(url);
         if (!matches(name, include, exclude)) continue;
         out.push({
+          // Key on the canonical URL so changing region never re-alerts.
           key: `pc:${url}`,
           title: titleFromUrl(url),
           source: "Pokémon Center",
-          url,
+          url: regionalise(url, region),
           detail: "listed on Pokémon Center's own sitemap",
         });
       }
