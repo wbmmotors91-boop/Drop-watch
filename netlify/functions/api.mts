@@ -31,6 +31,9 @@ export default async (req: Request, _context: Context) => {
     return json({
       publicKey: env("VAPID_PUBLIC_KEY"),
       pushConfigured: Boolean(env("VAPID_PRIVATE_KEY")),
+      // How many phones are actually registered. Without this, "nothing sent"
+      // is unreadable from outside the phone.
+      devices: (await readJson<Sub[]>("subs", [])).length,
       // Pokémon Center leads because it is the only source allowed to
       // notify; the rest are there to read.
       watching: ["Pokémon Center"]

@@ -181,11 +181,27 @@ async function disable() {
   }
 }
 
+// "Nothing sent" told nobody anything. Each of these is a different problem
+// with a different fix, so name the one that actually happened.
+const PUSH_FAILURES = {
+  "no-keys": "The server has no push keys set, so nothing can be sent. That's mine to fix.",
+  "no-devices":
+    "This phone isn't registered yet. Tap Turn off, then Turn on alerts again, and allow the permission when Android asks.",
+  "all-rejected": "The phone is registered but the push service rejected it.",
+};
+
 async function test() {
   $("test").disabled = true;
   $("test").textContent = "Sending…";
   const { body } = await api("test", { method: "POST" });
-  $("test").textContent = body.sent ? "Sent" : "Nothing sent";
+  const failed = !body.sent;
+  $("test").textContent = failed ? "Nothing sent" : "Sent";
+  // Put the explanation where the alert status already is, so it is readable
+  // rather than crammed into a button.
+  if (failed) {
+    const why = PUSH_FAILURES[body.reason] || "Nothing was sent and the server didn't say why.";
+    $("alert-state").textContent = why + (body.detail ? ` (${body.detail})` : "");
+  }
   setTimeout(() => {
     $("test").textContent = "Send a test";
     $("test").disabled = false;

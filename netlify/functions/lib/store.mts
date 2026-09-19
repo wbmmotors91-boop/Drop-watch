@@ -144,18 +144,31 @@ function vapidReady(): boolean {
  * Push to every subscribed device. A subscription the browser has thrown
  * away answers 404/410; drop those rather than retrying them forever.
  */
-export async function pushAll(
-  title: string,
-  body: string,
-  url: string,
-): Promise<{ sent: number; dropped: number }> {
-  if (!vapidReady()) return { sent: 0, dropped: 0 };
+/**
+ * The result of a push attempt.
+ *
+ * `reason` exists because "nothing sent" has three completely different
+ * causes and the app was reporting all of them with the same four words. A
+ * phone that was never registered, a key that never reached the function and
+ * a push service that rejected the message need three different fixes.
+ */
+export type PushResult = {
+  sent: number;
+  dropped: number;
+  devices: number;
+  reason?: "no-keys" | "no-devices" | "all-rejected";
+  detail?: string;
+};
+
+export async function pushAll(title: string, body: string, url: string): Promise<PushResult> {
+  if (!vapidReady()) return { sent: 0, dropped: 0, devices: 0, reason: "no-keys" };
 
   const subs = await readJson<Sub[]>("subs", []);
-  if (!subs.length) return { sent: 0, dropped: 0 };
+  if (!subs.length) return { sent: 0, dropped: 0, devices: 0, reason: "no-devices" };
 
   const payload = JSON.stringify({ title, body, url, at: Date.now() });
   const dead: string[] = [];
+  const failures: string[] = [];
   let sent = 0;
 
   await Promise.all(
@@ -168,6 +181,7 @@ export async function pushAll(
         // is probably transient, so leave it alone and try again next time.
         if (err?.statusCode === 404 || err?.statusCode === 410) dead.push(s.endpoint);
         else console.warn("push failed", err?.statusCode, String(err).slice(0, 120));
+        failures.push(`${err?.statusCode || "?"} ${String(err?.body || err).slice(0, 80)}`);
       }
     }),
   );
@@ -178,5 +192,10 @@ export async function pushAll(
       subs.filter((s) => !dead.includes(s.endpoint)),
     );
   }
-  return { sent, dropped: dead.length };
+  return {
+    sent,
+    dropped: dead.length,
+    devices: subs.length,
+    ...(sent === 0 ? { reason: "all-rejected" as const, detail: failures[0] } : {}),
+  };
 }
