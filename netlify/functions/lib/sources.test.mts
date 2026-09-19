@@ -4,7 +4,7 @@ import {
 } from "./sources.mts";
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
-  STORE_SIGHTING_PRODUCTS, STORE_SIGHTING_STORES, STORE_SIGHTING_PLACES,
+  STORE_SIGHTING_PRODUCTS, STORE_SIGHTING_STORES, STORE_SIGHTING_PLACES, EB_GAMES_TERMS,
   CATALOGUE_EPOCH, isArrival,
 } from "./config.mts";
 
@@ -495,14 +495,29 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   ];
   const local = [
     "Walmart Stoney Creek on Centennial just put out 30th Celebration ETBs",
-    "Grimsby Superstore has booster bundles on the shelf right now",
+    "Grimsby Walmart has booster bundles on the shelf right now",
     "Heads up Hamilton, Walmart restocked elite trainer boxes this morning",
     "Niagara Walmart had a pallet of booster boxes go out",
   ];
 
   check("American restock bots are dropped", online.filter(passes), []);
+  // Superstore came out on 2026-09-19 when Aaron cut the list to Walmart,
+  // EB Games and Pokémon Center. A local Superstore post must now be ignored.
+  check("a dropped chain no longer counts as a store", passes("Grimsby Superstore restocked elite trainer boxes"), false);
   check("local sightings get through", local.filter(passes).length, local.length);
   check("a local post naming no store is dropped", passes("Grimsby Costco had booster boxes"), false);
+  // EB Games is gated on Canada rather than on his towns, because its
+  // preorders open online nationally.
+  const ebPasses = (text: string) =>
+    matches(text, STORE_SIGHTING_PRODUCTS, KEYWORDS_EXCLUDE) &&
+    matches(text, EB_GAMES_TERMS, []) &&
+    matches(text, CANADIAN_TERMS, []);
+  check("an EB Games Canada preorder gets through", ebPasses("EB Games Canada has elite trainer box preorders live"), true);
+  check("ebgames spelled solid still counts", ebPasses("ebgames Ontario restocked booster boxes"), true);
+  check("a US GameStop post is dropped", ebPasses("GameStop has elite trainer boxes in stock"), false);
+  // "eb" alone is far too common to treat as a store name.
+  check("a bare eb is not a store", ebPasses("Canada eb has booster boxes"), false);
+
   check("a local post naming no product is dropped", passes("Walmart in Stoney Creek was busy today"), false);
 }
 

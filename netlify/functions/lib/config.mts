@@ -187,12 +187,15 @@ export const STORE_SIGHTING_PLACES = [
   "golden horseshoe",
 ];
 
-export const STORE_SIGHTING_STORES = [
-  "walmart",
-  "superstore",
-  "real canadian superstore",
-  "rcss",
-];
+export const STORE_SIGHTING_STORES = ["walmart"];
+
+/**
+ * EB Games, written the several ways people actually type it.
+ *
+ * Deliberately no bare "eb": it matches far too much ordinary text to be a
+ * store name.
+ */
+export const EB_GAMES_TERMS = ["eb games", "ebgames", "eb game"];
 
 /**
  * Near enough to buy from without a customs bill.
@@ -237,53 +240,25 @@ export const CANADIAN_TERMS = [
 ];
 
 export const FEEDS: Feed[] = [
-  { name: "Dexerto", url: "https://www.dexerto.com/pokemon/feed/" },
-
-  // Reddit throttles hard, so ask it as few times as possible: one broad
-  // search covering every product word, and one scoped to the Canadian deals
-  // subreddit. Three narrower searches earned a 429 on two of them every
-  // cycle, even spaced out.
-  {
-    name: "Reddit drops",
-    rotate: "reddit",
-    // Canadian posts only: he is not buying from a US shelf.
-    requireAlso: CANADIAN_TERMS,
-    url:
-      "https://www.reddit.com/search.rss?q=" +
-      encodeURIComponent(
-        '("pokemon center" OR "elite trainer box" OR "booster box" OR "ultra premium collection") ' +
-          '(restock OR preorder OR drop OR live OR "in stock")',
-      ) +
-      "&sort=new&t=day",
-  },
-  {
-    name: "Reddit Canada deals",
-    rotate: "reddit",
-    url:
-      "https://www.reddit.com/r/PokemonTCGDealsCanada/search.rss?restrict_sr=1&q=" +
-      encodeURIComponent("booster box OR elite trainer box OR preorder") +
-      "&sort=new&t=week",
-  },
-
-  // Walmart and Superstore shelf sightings.
+  // Walmart shelf sightings, near him.
   //
-  // Neither chain publishes store-level stock anywhere a server can read, so
-  // the only thing that knows a Stoney Creek shelf has boxes on it is a person
-  // standing in front of it. This reads what those people post. Aaron's own
-  // verdict is that it is late and wrong most of the time, so it stays in the
-  // app to read and is never allowed to send a notification: PUSH_SOURCES is
-  // what enforces that, and Pokémon Center is the only name on it.
+  // Walmart publishes no store-level stock anywhere a server can read, so the
+  // only thing that knows a Stoney Creek shelf has boxes on it is a person
+  // standing in front of it. This reads what those people post. It is a tip,
+  // not a fact, and it is never allowed to send a notification: PUSH_SOURCES
+  // is what enforces that, and Pokémon Center is the only name on it.
   //
   // Asked site-wide rather than in one subreddit, because these sightings land
   // in local and provincial subs as often as in the Pokémon ones. The gates
-  // below then insist a post name both a store and the product.
+  // below then insist a post name the store, the product and somewhere he can
+  // drive to.
   {
-    name: "Walmart & Superstore sightings",
+    name: "Walmart sightings",
     rotate: "reddit",
     url:
       "https://www.reddit.com/search.rss?q=" +
       encodeURIComponent(
-        "(walmart OR superstore) pokemon " +
+        "walmart pokemon " +
           '(restock OR restocked OR "in stock" OR stocked OR found OR "on the shelf")',
       ) +
       "&sort=new&t=week",
@@ -291,24 +266,42 @@ export const FEEDS: Feed[] = [
     requireAny: STORE_SIGHTING_STORES,
     requireAlso: STORE_SIGHTING_PLACES,
   },
+
+  // EB Games Canada.
+  //
+  // Their own site cannot be watched: hosted requests get a 403, and the
+  // sitemap their robots.txt advertises serves a storefront page rather than
+  // a list of URLs, so there is no published product list to diff. What is
+  // left is people reporting their preorders and restocks, which is a tip
+  // like the Walmart one and is treated the same way.
+  //
+  // Gated on Canada rather than on his towns: EB Games preorders open online
+  // nationally, so a post from Ottawa is still useful to him, where a Walmart
+  // shelf in Ottawa is not.
+  {
+    name: "EB Games Canada",
+    rotate: "reddit",
+    url:
+      "https://www.reddit.com/search.rss?q=" +
+      encodeURIComponent(
+        '("eb games" OR ebgames) pokemon ' +
+          '(restock OR preorder OR "in stock" OR drop OR live)',
+      ) +
+      "&sort=new&t=week",
+    include: STORE_SIGHTING_PRODUCTS,
+    requireAny: EB_GAMES_TERMS,
+    requireAlso: CANADIAN_TERMS,
+  },
 ];
 
 /**
- * Canadian retailers that often list a SKU before Pokémon Center posts it.
+ * Retailer pages read directly. Empty on purpose.
  *
- * This list is short because most of them block hosted traffic the same way
- * Pokémon Center does: EB Games answers 403 and Toys R Us's search path 404s.
- * The poller records what each source returned, so the app shows which ones
- * answered rather than failing silently. Add candidates freely — a dead one
- * costs a logged line, not a missed drop.
+ * Aaron asked on 2026-09-19 for Walmart, EB Games and Pokémon Center and
+ * nothing else, so Indigo came out. The machinery stays because adding a
+ * retailer back is one entry.
  */
-export const RETAILERS: Retailer[] = [
-  {
-    name: "Indigo",
-    url: "https://www.indigo.ca/en-ca/search?q=pokemon+elite+trainer+box",
-    pattern: "/en-ca/[a-z0-9-]+/\\d{6,}",
-  },
-];
+export const RETAILERS: Retailer[] = [];
 
 /**
  * Pokémon Center's own sitemap.
@@ -338,11 +331,24 @@ export const POKEMON_CENTER = {
  */
 export const PUSH_SOURCES = ["Pokémon Center"];
 
-export const UPC_QUERIES = [
-  "pokemon elite trainer box",
-  "pokemon booster box",
-  "pokemon ultra premium collection",
-];
+/**
+ * Every source name that may appear in the feed.
+ *
+ * Turning a source off has to take its old entries with it, or they sit there
+ * forever looking current. Derived from the lists above rather than written
+ * out, so it cannot drift from what is actually being read.
+ */
+export function activeSources(): string[] {
+  return ["Pokémon Center", ...FEEDS.map((f) => f.name), ...RETAILERS.map((r) => r.name)]
+    .concat(UPC_QUERIES.length ? ["UPC database"] : []);
+}
+
+/**
+ * Barcode lookups. Empty on purpose, same reason as RETAILERS: not one of the
+ * three sources Aaron asked to keep. The scheduled pass that reads these now
+ * does nothing, which costs nothing.
+ */
+export const UPC_QUERIES: string[] = [];
 
 /** Keep the in-app feed to something a phone can render instantly. */
 export const MAX_ITEMS = 120;

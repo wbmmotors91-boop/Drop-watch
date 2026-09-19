@@ -99,6 +99,20 @@ export async function pruneItems(
   return dropped;
 }
 
+/**
+ * Drop every stored entry whose source is no longer being read.
+ *
+ * Unlike pruneItems, which re-judges one named source against its own rules,
+ * this judges the source itself.
+ */
+export async function pruneItemsBySource(keep: (source: string) => boolean): Promise<number> {
+  const existing = await readJson<Item[]>("items", []);
+  const kept = existing.filter((i) => keep(i.source));
+  const dropped = existing.length - kept.length;
+  if (dropped) await writeJson("items", kept);
+  return dropped;
+}
+
 export async function addItems(fresh: Item[], catalogue = false): Promise<Item[]> {
   const now = Date.now();
   const existing = await readJson<Item[]>("items", []);

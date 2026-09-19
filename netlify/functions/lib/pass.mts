@@ -5,6 +5,7 @@ import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollRetailers
 import {
   CANADIAN_TERMS,
   FEEDS,
+  activeSources,
   KEYWORDS_EXCLUDE,
   KEYWORDS_INCLUDE,
   KEYWORDS_VERSION,
@@ -15,7 +16,7 @@ import {
   RETAILERS,
   UPC_QUERIES,
 } from "./config.mjs";
-import { addItems, pruneItems, pushAll, readJson, writeJson, type Meta } from "./store.mjs";
+import { addItems, pruneItems, pruneItemsBySource, pushAll, readJson, writeJson, type Meta } from "./store.mjs";
 
 // Headroom over the ~1,279 sealed products Pokémon Center lists today. The
 // floor computed below is what actually guarantees correctness; this is only
@@ -273,6 +274,14 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   // the known list so the next diff is right, but it is not a new arrival and
   // must not show up as one.
   await addItems(fresh, firstEver || keywordsWidened);
+
+  // A source that was turned off leaves its entries behind, and they look as
+  // current as anything else. Sweep them every pass: it is a no-op once the
+  // feed is clean, and it means changing the source list is one edit rather
+  // than an edit plus a cleanup nobody remembers to do.
+  const active = activeSources();
+  const stale = await pruneItemsBySource((src) => active.includes(src));
+  if (stale) notes.push(`${stale} entries from sources no longer watched were removed`);
 
   let notified = 0;
   if (firstEver) {
