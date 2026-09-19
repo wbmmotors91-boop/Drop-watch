@@ -49,7 +49,13 @@ export const KEYWORDS_INCLUDE = [
  * this, broadening the net once fires a notification for every one of them.
  * A pass that sees a new version takes the new matches in silently.
  */
-export const KEYWORDS_VERSION = 6;
+// 7: not a keyword change. The seen-key list was truncated to 800 while the
+// bug was live, so ~479 product keys are missing from it. The next cycle where
+// Pokémon Center actually serves a changed sitemap would find them "new" and
+// fire a notification for every one. Bumping this spends the existing quiet
+// -rebuild path on that pass: everything is taken in, marked catalogue, and
+// nothing buzzes. One pass is all it needs; the cap fix keeps it that way.
+export const KEYWORDS_VERSION = 7;
 
 /**
  * The moment the feed learned to tell an arrival from the back catalogue
