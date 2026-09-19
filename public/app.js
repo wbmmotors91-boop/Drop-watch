@@ -1,0 +1,204 @@
+/* Drop Watch front end. Plain JS, no build step. */
+
+const $ = (id) => document.getElementById(id);
+const state = { publicKey: "", sub: null, reg: null };
+
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+const standalone =
+  window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+
+function ago(ts) {
+  if (!ts) return "";
+  const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (s < 60) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  return `${Math.round(h / 24)} d ago`;
+}
+
+function urlB64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function api(path, opts) {
+  const res = await fetch(`/api/${path}`, opts);
+  return { ok: res.ok, status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+function renderFeed(items) {
+  const feed = $("feed");
+  if (!items.length) {
+    feed.innerHTML =
+      '<li class="empty">Nothing yet. The first check runs within five minutes, and the very first one stays quiet so you are not buried in alerts for things that already exist.</li>';
+    return;
+  }
+  feed.innerHTML = items
+    .map((i) => {
+      const title = i.title || "(untitled)";
+      const link = i.url
+        ? `<a href="${i.url}" target="_blank" rel="noopener">${escapeHtml(title)}</a>`
+        : `<span>${escapeHtml(title)}</span>`;
+      const upc = i.upc ? `<span class="chip upc">UPC ${escapeHtml(i.upc)}</span>` : "";
+      return `<li>${link}<div class="meta"><span class="chip">${escapeHtml(
+        i.source,
+      )}</span>${upc}<span class="when">${ago(i.found)}</span></div></li>`;
+    })
+    .join("");
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+async function loadState() {
+  const { ok, body } = await api("state");
+  if (!ok) {
+    $("status").textContent = "Could not reach the server";
+    return;
+  }
+  state.publicKey = body.publicKey || "";
+  renderFeed(body.items || []);
+  $("sources").innerHTML = (body.watching || [])
+    .map((s) => `<li>${escapeHtml(s)}</li>`)
+    .join("");
+
+  const last = body.lastPoll;
+  const stale = last && Date.now() - last > 20 * 60 * 1000;
+  const cls = !last ? "off" : stale ? "stale" : "";
+  $("status").innerHTML = last
+    ? `<span class="dot ${cls}"></span>Last checked ${ago(last)}`
+    : '<span class="dot off"></span>Waiting for the first check';
+  refreshAlertUi();
+}
+
+function setAlertUi({ message, enable, disable, test }) {
+  $("alert-state").textContent = message;
+  $("enable").hidden = !enable;
+  $("disable").hidden = !disable;
+  $("test").hidden = !test;
+}
+
+async function refreshAlertUi() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    setAlertUi({ message: "This browser cannot do push notifications." });
+    $("ios-hint").hidden = !isIOS;
+    return;
+  }
+  if (isIOS && !standalone) {
+    setAlertUi({ message: "Add this to your Home Screen first, then open it from there." });
+    $("ios-hint").hidden = false;
+    return;
+  }
+  if (!state.publicKey) {
+    setAlertUi({ message: "Push is not configured on the server yet." });
+    return;
+  }
+  state.reg = await navigator.serviceWorker.ready;
+  state.sub = await state.reg.pushManager.getSubscription();
+  if (state.sub) {
+    setAlertUi({ message: "Alerts are on for this device.", disable: true, test: true });
+  } else if (Notification.permission === "denied") {
+    setAlertUi({
+      message: "Notifications are blocked for this site. Turn them back on in your browser settings.",
+    });
+  } else {
+    setAlertUi({ message: "Alerts are off for this device.", enable: true });
+  }
+}
+
+async function enable() {
+  $("enable").disabled = true;
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") {
+      setAlertUi({ message: "You did not allow notifications.", enable: true });
+      return;
+    }
+    const sub = await state.reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlB64ToUint8Array(state.publicKey),
+    });
+    const { ok } = await api("subscribe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(sub.toJSON()),
+    });
+    if (!ok) throw new Error("server refused the subscription");
+    state.sub = sub;
+    setAlertUi({ message: "Alerts are on for this device.", disable: true, test: true });
+  } catch (err) {
+    setAlertUi({ message: `Could not turn alerts on: ${err.message}`, enable: true });
+  } finally {
+    $("enable").disabled = false;
+  }
+}
+
+async function disable() {
+  $("disable").disabled = true;
+  try {
+    const endpoint = state.sub && state.sub.endpoint;
+    if (state.sub) await state.sub.unsubscribe();
+    await api("unsubscribe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ endpoint }),
+    });
+    state.sub = null;
+    setAlertUi({ message: "Alerts are off for this device.", enable: true });
+  } finally {
+    $("disable").disabled = false;
+  }
+}
+
+async function test() {
+  $("test").disabled = true;
+  $("test").textContent = "Sending…";
+  const { body } = await api("test", { method: "POST" });
+  $("test").textContent = body.sent ? "Sent" : "Nothing sent";
+  setTimeout(() => {
+    $("test").textContent = "Send a test";
+    $("test").disabled = false;
+  }, 2500);
+}
+
+async function checkNow() {
+  const btn = $("check");
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  const { status, body } = await api("check", { method: "POST" });
+  if (status === 429) {
+    btn.textContent = `Wait ${body.wait}s`;
+  } else {
+    btn.textContent = body.found ? `${body.found} new` : "Nothing new";
+    await loadState();
+  }
+  setTimeout(() => {
+    btn.textContent = "Check now";
+    btn.disabled = false;
+  }, 2500);
+}
+
+async function boot() {
+  if ("serviceWorker" in navigator) {
+    try {
+      await navigator.serviceWorker.register("/sw.js");
+    } catch (err) {
+      console.warn("service worker failed", err);
+    }
+  }
+  $("enable").addEventListener("click", enable);
+  $("disable").addEventListener("click", disable);
+  $("test").addEventListener("click", test);
+  $("check").addEventListener("click", checkNow);
+  await loadState();
+  setInterval(loadState, 120000);
+}
+
+boot();

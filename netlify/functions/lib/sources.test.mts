@@ -1,0 +1,82 @@
+import { parseFeed, matches, extractProducts, stripHtml } from "./sources.mts";
+
+let fails = 0;
+const check = (name: string, got: any, want: any) => {
+  const g = JSON.stringify(got), w = JSON.stringify(want);
+  if (g === w) { console.log("  pass ", name); }
+  else { console.log(`  FAIL  ${name}\n        got:  ${g}\n        want: ${w}`); fails++; }
+};
+
+const RSS = `<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>Delta Reign Elite Trainer Box Revealed</title>
+<link>https://www.pokebeach.com/a</link><guid>pb-1</guid>
+<description><![CDATA[<p>The <b>ETB</b> lands Nov 6 &amp; sells fast.</p>]]></description></item>
+<item><title>Worlds Deck Profile: Gardevoir</title><link>https://www.pokebeach.com/b</link>
+<guid>pb-2</guid><description>A deck profile.</description></item>
+</channel></rss>`;
+
+const ATOM = `<feed xmlns="http://www.w3.org/2005/Atom">
+<entry><title>Pokemon Center booster box up early</title>
+<link rel="alternate" href="https://reddit.com/r/x/1"/><id>t3_x1</id>
+<summary>Booster box went live on the Canadian site.</summary></entry></feed>`;
+
+console.log("parseFeed RSS");
+const rss = parseFeed(RSS, "PokeBeach");
+check("two items", rss.length, 2);
+check("title", rss[0].title, "Delta Reign Elite Trainer Box Revealed");
+check("guid key", rss[0].key, "pb-1");
+check("cdata + entities", rss[0].detail, "The ETB lands Nov 6 & sells fast.");
+
+console.log("parseFeed Atom");
+const atom = parseFeed(ATOM, "reddit");
+check("one entry", atom.length, 1);
+check("href", atom[0].url, "https://reddit.com/r/x/1");
+check("id key", atom[0].key, "t3_x1");
+
+console.log("matches");
+const inc = ["elite trainer box", "etb", "booster box"];
+const exc = ["deck profile"];
+check("phrase", matches(rss[0].title, inc, exc), true);
+check("excluded", matches(rss[1].title, inc, exc), false);
+check("whole word only", matches("Setback report", ["etb"], []), false);
+check("bare word", matches("Grab the ETB", ["etb"], []), true);
+check("empty include", matches("anything", [], []), true);
+check("case", matches("BOOSTER BOX", inc, exc), true);
+// Terms are normalised before matching, so punctuation is stripped rather
+// than compiled into the pattern. The point of the check is that a term full
+// of regex metacharacters cannot throw.
+check("punctuation normalised away", matches("c++ stuff", ["c++"], []), true);
+check("metachars do not throw", matches("plain text", ["(*.[bad"], []), false);
+check("pre-order hyphen", matches("Pre-Order live now", ["pre-order"], []), true);
+
+console.log("extractProducts");
+const LISTING = `<a href="/en-ca/product/100-1/delta-etb?x=1"><img alt="Delta Reign Elite Trainer Box"/></a>
+<a href="/en-ca/product/100-2/pikachu-plush">Pikachu Plush</a>
+<a href="/en-ca/help/shipping">Shipping</a>`;
+const prods = extractProducts(LISTING, "/product/", "https://example.com/en-ca/cat");
+check("only products", prods.length, 2);
+check("absolute, no query", prods[0][0], "https://example.com/en-ca/product/100-1/delta-etb");
+check("alt fallback title", prods[0][1], "Delta Reign Elite Trainer Box");
+
+console.log("robustness");
+check("unescaped ampersand survives", parseFeed('<rss><item><title>Sword & Shield ETB</title><link>x</link></item></rss>', "s").length, 1);
+check("empty feed", parseFeed("<rss><channel></channel></rss>", "s").length, 0);
+check("garbage in", parseFeed("not xml at all", "s").length, 0);
+check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there</b></div>"), "Hello there");
+
+// --- news two-gate filter -------------------------------------------------
+// A feed item must both name a product and say something is happening to it.
+{
+  console.log("news two-gate filter");
+  const PRODUCTS = ["elite trainer box", "etb", "booster box"];
+  const EVENTS = ["preorder", "restock", "live", "revealed"];
+  const both = (t: string) => matches(t, PRODUCTS, []) && matches(t, EVENTS, []);
+
+  check("product + event fires", both("Delta Reign Elite Trainer Box preorder is live"), true);
+  check("product without event stays quiet", both("Which elite trainer box has the best art"), false);
+  check("event without product stays quiet", both("Restock happening at Walmart today"), false);
+  check("neither stays quiet", both("Worlds recap thread"), false);
+}
+
+console.log(fails ? `\n${fails} failed` : "\nall passed (including news gate)");
+process.exit(fails ? 1 : 0);

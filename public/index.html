@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Drop Watch</title>
+<meta name="description" content="Early warning for new sealed Pokémon TCG product: preorders, restocks, booster boxes and elite trainer boxes.">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#11141c">
+<link rel="apple-touch-icon" href="/icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Drop Watch">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <img src="/icons/icon-192.png" alt="" width="34" height="34">
+    <div>
+      <h1>Drop Watch</h1>
+      <p class="sub" id="status">Loading…</p>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="card" id="alerts-card">
+    <h2>Alerts</h2>
+    <p class="muted" id="alert-state">Checking this device…</p>
+    <div class="row">
+      <button id="enable" class="btn primary" hidden>Turn on alerts</button>
+      <button id="disable" class="btn" hidden>Turn off</button>
+      <button id="test" class="btn" hidden>Send a test</button>
+    </div>
+    <p class="hint" id="ios-hint" hidden>
+      On iPhone this only works once the app is on your Home Screen.
+      Tap Share, then <strong>Add to Home Screen</strong>, then open it from there.
+    </p>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Latest finds</h2>
+      <button id="check" class="btn small">Check now</button>
+    </div>
+    <ul class="feed" id="feed"><li class="empty">Loading…</li></ul>
+  </section>
+
+  <section class="card">
+    <h2>What this watches</h2>
+    <ul class="sources" id="sources"></ul>
+    <details>
+      <summary>What it can't do</summary>
+      <p>
+        Pokémon Center's own site blocks anything that isn't a real browser on a
+        home connection, so nothing running in the cloud can read their stock
+        pages. This watches everywhere a new product shows up
+        <em>before</em> or <em>around</em> that: announcements, retailer
+        listings and barcode databases. Announced preorders usually sit up for
+        fifteen to sixty minutes, which is the window this is built to catch.
+        Surprise restocks get no warning from anyone.
+      </p>
+    </details>
+  </section>
+
+</main>
+
+<footer>
+  <p class="muted">Checks every 5 minutes. Not affiliated with Pokémon or Pokémon Center.</p>
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
