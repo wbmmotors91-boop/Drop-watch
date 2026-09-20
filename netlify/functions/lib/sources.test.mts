@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, pollGzSitemapIndex, regionalise, feedsForCycle, skuFromUrl,
+  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, pollGzSitemapIndex, readStock, pollStock, regionalise, feedsForCycle, skuFromUrl,
 } from "./sources.mts";
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
@@ -637,6 +637,53 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a named Canadian merchant counts", canadianOffer([{ link: "https://shop.example/x", merchant: "Toys R Us Canada" }]), "https://shop.example/x");
   check("no offers at all is safe", canadianOffer(undefined), "");
   check("a malformed offer is skipped", canadianOffer([{ link: "not a url" }, { link: "https://indigo.ca/z" }]), "https://indigo.ca/z");
+}
+
+{
+  console.log("reading stock off a page");
+  check("add to cart means in stock", readStock("<button>Add to cart</button>"), "in");
+  check("out of stock wins over cart markup",
+    readStock("<div>Out of stock</div><button disabled>Add to cart</button>"), "out");
+  check("sold out counts", readStock("<span>SOLD OUT</span>"), "out");
+  check("currently unavailable counts", readStock("Currently Unavailable"), "out");
+  check("a page that says nothing is unknown", readStock("<p>Pokemon cards</p>"), "unknown");
+  check("buy now counts as in", readStock("<a>Buy now</a>"), "in");
+}
+
+{
+  console.log("catching a restock");
+  const pages: Record<string, string> = {
+    "https://x/a": "<button>Add to cart</button>",
+    "https://x/b": "<div>Out of stock</div>",
+    "https://x/c": "<button>Add to cart</button>",
+  };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: any) => ({
+    ok: true, status: 200, headers: new Headers(), text: async () => pages[String(url)] || "",
+  })) as any;
+
+  const watch = [
+    { url: "https://x/a", title: "A" },
+    { url: "https://x/b", title: "B" },
+    { url: "https://x/c", title: "C" },
+  ];
+  // a was out last time and is in now: that is the restock. b is still out.
+  // c was already in, so nothing changed and nothing fires.
+  const notes: string[] = [];
+  const r = await pollStock(watch, { "https://x/a": "out", "https://x/b": "out", "https://x/c": "in" }, notes, [], "Walmart Canada");
+  check("only the out-to-in flip is reported", r.flips.map((f) => f.url), ["https://x/a"]);
+  check("still-out is not a restock", r.flips.some((f) => f.url === "https://x/b"), false);
+  check("already-in is not a restock", r.flips.some((f) => f.url === "https://x/c"), false);
+  check("every state is recorded", Object.keys(r.states).length, 3);
+
+  // No prior state at all: nothing can have changed, so nothing fires.
+  const firstRun = await pollStock(watch, {}, [], [], "Walmart Canada");
+  check("a first look never claims a restock", firstRun.flips.length, 0);
+
+  // robots.txt wins.
+  const off = await pollStock(watch, { "https://x/a": "out" }, [], ["/a"], "Walmart Canada");
+  check("a disallowed page is not fetched", off.states["https://x/a"], undefined);
+  globalThis.fetch = realFetch;
 }
 
 {

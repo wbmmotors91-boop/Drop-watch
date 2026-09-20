@@ -365,6 +365,77 @@ export async function pollFeeds(
   return (await Promise.all(perHost)).flat();
 }
 
+/**
+ * Read a product page's availability.
+ *
+ * Deliberately conservative: "unknown" is a perfectly good answer and the
+ * only honest one when a page does not say. A restock alert is only worth
+ * sending if it is right, so a flip is reported solely on a definite
+ * out-of-stock becoming a definite in-stock, never on a guess.
+ */
+export function readStock(html: string): "in" | "out" | "unknown" {
+  const lower = html.toLowerCase();
+  // Out is checked first: a sold-out page often still carries cart markup for
+  // the button it has disabled, so "add to cart" alone proves nothing.
+  const out = ["out of stock", "sold out", "currently unavailable", "no longer available"];
+  if (out.some((w) => lower.includes(w))) return "out";
+  const inStock = ["add to cart", "add to bag", "buy now"];
+  if (inStock.some((w) => lower.includes(w))) return "in";
+  return "unknown";
+}
+
+export type StockCheck = {
+  url: string;
+  title: string;
+  before: string;
+  after: string;
+};
+
+/**
+ * Check a handful of product pages for a stock change.
+ *
+ * `urls` is the slice to check this cycle, chosen by the caller, because the
+ * watchlist is longer than any one cycle should ask for. A restock is the
+ * out -> in transition and nothing else: a page that was unknown before tells
+ * us nothing about whether anything changed, so it is recorded and passed
+ * over.
+ */
+export async function pollStock(
+  urls: { url: string; title: string }[],
+  prior: Record<string, string>,
+  notes: string[],
+  disallowed: string[],
+  name: string,
+): Promise<{ states: Record<string, string>; flips: StockCheck[] }> {
+  const states: Record<string, string> = {};
+  const flips: StockCheck[] = [];
+  let refused = 0;
+
+  for (const { url, title } of urls) {
+    if (isDisallowed(url, disallowed)) continue;
+    let state: "in" | "out" | "unknown" = "unknown";
+    try {
+      state = readStock(await grab(url, 9000));
+    } catch (err) {
+      if (String(err).includes("403")) refused++;
+      continue;
+    }
+    states[url] = state;
+    if (prior[url] === "out" && state === "in") {
+      flips.push({ url, title, before: "out", after: "in" });
+    }
+  }
+
+  const counted = Object.values(states);
+  notes.push(
+    `${name} stock: checked ${urls.length}, ${counted.filter((s) => s === "in").length} in, ` +
+      `${counted.filter((s) => s === "out").length} out, ` +
+      `${counted.filter((s) => s === "unknown").length} unreadable` +
+      (refused ? `, ${refused} refused` : ""),
+  );
+  return { states, flips };
+}
+
 export type GzSitemapOptions = {
   name: string;
   robotsUrl: string;

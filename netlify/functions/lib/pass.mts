@@ -1,7 +1,7 @@
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollGzSitemapIndex, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
+import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollGzSitemapIndex, pollRetailers, pollSitemap, pollStock, pollUpc, probeProductPage } from "./sources.mjs";
 import {
   CANADIAN_TERMS,
   EB_GAMES,
@@ -24,6 +24,15 @@ import { addItems, pruneItems, pruneItemsBySource, pushAll, readJson, writeJson,
 // floor computed below is what actually guarantees correctness; this is only
 // how much history is kept beyond what is on the shelf right now.
 const MAX_KEYS_PER_SOURCE = 4000;
+
+/**
+ * Product pages checked for a stock change per cycle.
+ *
+ * Small on purpose. A restock is worth catching within an hour, not within a
+ * minute, and a store that has never asked us to slow down should not be
+ * given a reason to start. Pokémon Center taught that lesson expensively.
+ */
+const STOCK_PER_CYCLE = 6;
 
 /** How long Pokémon Center's robots.txt is trusted before re-reading it. */
 const ROBOTS_MAX_AGE_MS = 60 * 60 * 1000;
@@ -98,6 +107,8 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let ebRobots: { rules: string[]; at: number } | undefined;
   let wmRobots: { rules: string[]; at: number } | undefined;
   let sourceStatus: Record<string, string> | undefined;
+  let stockCursor: number | undefined;
+  let restocks: Item[] = [];
   let ebSkipped = false;
   let stockProbedAt: number | undefined;
   let stockProbe: { at: number; result: string } | undefined;
@@ -302,6 +313,48 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       await writeJson("ebValidators", ebResult.validators);
     }
     items = [...feedItems, ...retailItems, ...(ebResult?.items || []), ...(wmResult?.items || [])];
+
+    // Restock watching, which is the thing Aaron has asked for most often.
+    //
+    // Walmart's product pages say whether you can buy the thing, and they
+    // answer a hosted request, so an out-of-stock going back in stock is
+    // readable here in a way it simply is not on Pokémon Center. The watch
+    // list is the sealed Walmart products already in the store, checked a few
+    // per cycle on a rotation so a long list never becomes a burst of
+    // requests.
+    if (!wmSkipped) {
+      const stored = await readJson<Item[]>("items", []);
+      const watchable = stored
+        .filter((i) => i.source === WALMART.name && i.url)
+        .map((i) => ({ url: i.url, title: i.title }));
+      if (watchable.length) {
+        const priorStates = await readJson<Record<string, string>>("wmStock", {});
+        const cursor = (await readJson<Meta>("meta", {})).stockCursor || 0;
+        const start = (cursor * STOCK_PER_CYCLE) % watchable.length;
+        const slice = [...watchable, ...watchable].slice(start, start + STOCK_PER_CYCLE);
+        const { states, flips } = await pollStock(
+          slice,
+          priorStates,
+          notes,
+          wmDisallowed,
+          WALMART.name,
+        );
+        stockCursor = cursor + 1;
+        if (Object.keys(states).length) {
+          await writeJson("wmStock", { ...priorStates, ...states });
+        }
+        // A flip is a real event, not a listing, so it goes straight to the
+        // notifier with its own key rather than through the new-arrival diff.
+        restocks = flips.map((f) => ({
+          key: `restock:${f.url}:${Date.now()}`,
+          title: f.title,
+          source: WALMART.name,
+          url: f.url,
+          detail: "back in stock at Walmart",
+        }));
+        if (restocks.length) notes.push(`${restocks.length} back in stock`);
+      }
+    }
   } else {
     items = await pollUpc(UPC_QUERIES, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes);
   }
@@ -371,7 +424,19 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   const stale = await pruneItemsBySource((src) => active.includes(src));
   if (stale) notes.push(`${stale} entries from sources no longer watched were removed`);
 
+  // A restock is not a new listing, so it bypasses the seen/catalogue diff
+  // entirely: the product was always there, what changed is that you can buy
+  // it. It always buzzes, because being told late is the same as not being
+  // told, and it is a first-party fact rather than somebody's report.
   let notified = 0;
+  if (restocks.length) {
+    await addItems(restocks);
+    for (const r of restocks.slice(0, MAX_PUSH_PER_PASS)) {
+      const res = await pushAll(`Back in stock: ${r.title.slice(0, 70)}`, `at ${r.source}`, r.url);
+      notified += res.sent;
+    }
+  }
+
   if (firstEver) {
     // Seed quietly. Otherwise the first run fires a notification for every
     // product that already exists, which is the fastest way to get an app
@@ -435,6 +500,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     keywordsVersionByKind: { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION },
     ...(pcChildren ? { pcChildren } : {}),
     ...(newsCursor === undefined ? {} : { newsCursor }),
+    ...(stockCursor === undefined ? {} : { stockCursor }),
     ...(robots ? { robots } : {}),
     ...(ebRobots ? { ebRobots } : {}),
     ...(wmRobots ? { wmRobots } : {}),
