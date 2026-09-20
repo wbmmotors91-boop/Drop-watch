@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, regionalise, feedsForCycle, skuFromUrl,
+  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, pollGzSitemapIndex, regionalise, feedsForCycle, skuFromUrl,
 } from "./sources.mts";
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
@@ -637,6 +637,64 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("a named Canadian merchant counts", canadianOffer([{ link: "https://shop.example/x", merchant: "Toys R Us Canada" }]), "https://shop.example/x");
   check("no offers at all is safe", canadianOffer(undefined), "");
   check("a malformed offer is skipped", canadianOffer([{ link: "not a url" }, { link: "https://indigo.ca/z" }]), "https://indigo.ca/z");
+}
+
+{
+  console.log("a gzipped sitemap index");
+  const { gzipSync } = await import("node:zlib");
+  const index = `<?xml version="1.0"?><sitemapindex>
+    <sitemap><loc>https://www.walmart.ca/sitemap-product-1p-en.xml.gz</loc><lastmod>2026-09-17</lastmod></sitemap>
+    <sitemap><loc>https://www.walmart.ca/sitemap-product-1p-en1.xml.gz</loc><lastmod>2026-09-17</lastmod></sitemap>
+  </sitemapindex>`;
+  const child = `<?xml version="1.0"?><urlset>
+    <url><loc>https://www.walmart.ca/en/ip/pokemon-tcg-scarlet-violet-elite-trainer-box/6000205512345</loc></url>
+    <url><loc>https://www.walmart.ca/en/ip/pokemon-plush-toy-eevee/6000205599999</loc></url>
+    <url><loc>https://www.walmart.ca/en/cp/toys/10004</loc></url>
+  </urlset>`;
+  const gz = gzipSync(Buffer.from(child));
+
+  const realFetch = globalThis.fetch;
+  const asked: string[] = [];
+  globalThis.fetch = (async (url: any) => {
+    asked.push(String(url));
+    if (String(url).endsWith(".gz")) {
+      return { ok: true, status: 200, headers: new Headers(), arrayBuffer: async () => gz };
+    }
+    return { ok: true, status: 200, headers: new Headers(), text: async () => index };
+  }) as any;
+
+  const opts = {
+    name: "Walmart Canada", robotsUrl: "https://www.walmart.ca/robots.txt",
+    indexUrl: "https://www.walmart.ca/sitemap-product-1p-en.xml", productPattern: "/ip/",
+  };
+  const notes1: string[] = [];
+  const first = await pollGzSitemapIndex(opts, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes1, []);
+  check("the gzipped child is decompressed and filtered", first.items.length, 1);
+  check("it keeps Walmart's own product URL", first.items[0]?.url,
+    "https://www.walmart.ca/en/ip/pokemon-tcg-scarlet-violet-elite-trainer-box/6000205512345");
+  check("a category page is not a product", first.items.some((i) => i.url.includes("/cp/")), false);
+  check("only one child is read per cycle", asked.filter((u) => u.endsWith(".gz")).length, 1);
+
+  // Second pass with the lastmods it returned: the first child is now known,
+  // so the other one is the one read.
+  asked.length = 0;
+  const notes2: string[] = [];
+  await pollGzSitemapIndex({ ...opts, lastmods: first.lastmods }, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes2, []);
+  check("the next cycle moves on to the next child",
+    asked.find((u) => u.endsWith(".gz")), "https://www.walmart.ca/sitemap-product-1p-en1.xml.gz");
+
+  // Nothing changed at all: no child is fetched.
+  asked.length = 0;
+  const bothKnown = { "https://www.walmart.ca/sitemap-product-1p-en.xml.gz": "2026-09-17",
+                      "https://www.walmart.ca/sitemap-product-1p-en1.xml.gz": "2026-09-17" };
+  const quiet = await pollGzSitemapIndex({ ...opts, lastmods: bothKnown }, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, [], []);
+  check("unchanged children cost nothing", asked.filter((u) => u.endsWith(".gz")).length, 0);
+  check("and yield nothing", quiet.items.length, 0);
+
+  const offNotes: string[] = [];
+  const off = await pollGzSitemapIndex(opts, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, offNotes, ["/sitemap"]);
+  check("robots.txt is obeyed for Walmart too", off.items.length, 0);
+  globalThis.fetch = realFetch;
 }
 
 {

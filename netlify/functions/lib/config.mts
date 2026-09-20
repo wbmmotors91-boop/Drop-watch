@@ -239,34 +239,16 @@ export const CANADIAN_TERMS = [
   "pokemoncenter.com/en-ca",
 ];
 
-export const FEEDS: Feed[] = [
-  // Walmart shelf sightings, near him.
-  //
-  // Walmart publishes no store-level stock anywhere a server can read, so the
-  // only thing that knows a Stoney Creek shelf has boxes on it is a person
-  // standing in front of it. This reads what those people post. It is a tip,
-  // not a fact, and it is never allowed to send a notification: PUSH_SOURCES
-  // is what enforces that, and Pokémon Center is the only name on it.
-  //
-  // Asked site-wide rather than in one subreddit, because these sightings land
-  // in local and provincial subs as often as in the Pokémon ones. The gates
-  // below then insist a post name the store, the product and somewhere he can
-  // drive to.
-  {
-    name: "Walmart sightings",
-    rotate: "reddit",
-    url:
-      "https://www.reddit.com/search.rss?q=" +
-      encodeURIComponent(
-        "walmart pokemon " +
-          '(restock OR restocked OR "in stock" OR stocked OR found OR "on the shelf")',
-      ) +
-      "&sort=new&t=week",
-    include: STORE_SIGHTING_PRODUCTS,
-    requireAny: STORE_SIGHTING_STORES,
-    requireAlso: STORE_SIGHTING_PLACES,
-  },
-];
+/**
+ * Reddit and other chatter. Empty on purpose.
+ *
+ * Aaron asked on 2026-09-19 that Reddit be removed as a source. Everything
+ * left is a store's own published product list, which is what he wanted all
+ * along: no second-hand reports, no sightings, nothing he has to take
+ * somebody's word for.
+ */
+export const FEEDS: Feed[] = [];
+
 
 /**
  * Retailer pages read directly. Empty on purpose.
@@ -310,6 +292,28 @@ export const EB_GAMES = {
  * The poller reads robots.txt first and obeys it, so if they ever disallow
  * these paths it stops on its own.
  */
+/**
+ * Walmart Canada's own product sitemap, first-party products only.
+ *
+ * The 1p in the filename is the whole point. Walmart splits what it sells
+ * itself from what its marketplace sellers list, into separate sitemaps, and
+ * the marketplace was Aaron's entire objection to walmart.ca. Reading only
+ * sitemap-product-1p-en.xml means every result is Walmart's own listing.
+ *
+ * This is online stock, not shelf stock. Nothing Walmart publishes says what
+ * is on a shelf in Stoney Creek, and that has not changed. What it does say
+ * is when Walmart itself starts listing a product, which is a real drop.
+ *
+ * The children are gzipped and large, so the index's lastmod decides what
+ * gets read and only one child is read per cycle.
+ */
+export const WALMART = {
+  name: "Walmart Canada",
+  robotsUrl: "https://www.walmart.ca/robots.txt",
+  indexUrl: "https://www.walmart.ca/sitemap-product-1p-en.xml",
+  productPattern: "/ip/",
+};
+
 export const POKEMON_CENTER = {
   robotsUrl: "https://www.pokemoncenter.com/robots.txt",
   indexUrl: "https://www.pokemoncenter.com/sitemap.xml",
@@ -335,7 +339,7 @@ export const PUSH_SOURCES = ["Pokémon Center"];
  * out, so it cannot drift from what is actually being read.
  */
 export function activeSources(): string[] {
-  return ["Pokémon Center", EB_GAMES.name, ...FEEDS.map((f) => f.name), ...RETAILERS.map((r) => r.name)]
+  return ["Pokémon Center", EB_GAMES.name, WALMART.name, ...FEEDS.map((f) => f.name), ...RETAILERS.map((r) => r.name)]
     .concat(UPC_QUERIES.length ? ["UPC database"] : []);
 }
 

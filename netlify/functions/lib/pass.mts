@@ -1,11 +1,12 @@
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
+import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollGzSitemapIndex, pollRetailers, pollSitemap, pollUpc, probeProductPage } from "./sources.mjs";
 import {
   CANADIAN_TERMS,
   EB_GAMES,
   FEEDS,
+  WALMART,
   activeSources,
   KEYWORDS_EXCLUDE,
   KEYWORDS_INCLUDE,
@@ -95,6 +96,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let newsCursor: number | undefined;
   let robots: { rules: string[]; at: number } | undefined;
   let ebRobots: { rules: string[]; at: number } | undefined;
+  let wmRobots: { rules: string[]; at: number } | undefined;
   let ebSkipped = false;
   let stockProbedAt: number | undefined;
   let stockProbe: { at: number; result: string } | undefined;
@@ -247,7 +249,21 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         ebSkipped = true;
       }
     }
-    const [feedItems, retailItems, ebResult] = await Promise.all([
+    const wmCached = ebPrior.wmRobots;
+    let wmDisallowed: string[] = [];
+    let wmSkipped = false;
+    if (wmCached && Date.now() - wmCached.at < ROBOTS_MAX_AGE_MS) {
+      wmDisallowed = wmCached.rules;
+    } else {
+      try {
+        wmDisallowed = parseDisallowed(await grab(WALMART.robotsUrl, 8000));
+        wmRobots = { rules: wmDisallowed, at: Date.now() };
+      } catch (err) {
+        notes.push(`${WALMART.name} robots.txt: ${String(err).slice(0, 60)}`);
+        wmSkipped = true;
+      }
+    }
+    const [feedItems, retailItems, ebResult, wmResult] = await Promise.all([
       pollFeeds(FEEDS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, NEWS_REQUIRE_ANY, 20000, newsCursor),
       pollRetailers(RETAILERS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes),
       ebSkipped
@@ -259,11 +275,21 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
             notes,
             ebDisallowed,
           ),
+      wmSkipped
+        ? Promise.resolve(null)
+        : pollGzSitemapIndex(
+            { ...WALMART, lastmods: await readJson("wmLastmods", {}) },
+            KEYWORDS_INCLUDE,
+            KEYWORDS_EXCLUDE,
+            notes,
+            wmDisallowed,
+          ),
     ]);
+    if (wmResult) await writeJson("wmLastmods", wmResult.lastmods);
     if (ebResult && Object.keys(ebResult.validators).length) {
       await writeJson("ebValidators", ebResult.validators);
     }
-    items = [...feedItems, ...retailItems, ...(ebResult?.items || [])];
+    items = [...feedItems, ...retailItems, ...(ebResult?.items || []), ...(wmResult?.items || [])];
   } else {
     items = await pollUpc(UPC_QUERIES, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes);
   }
@@ -379,6 +405,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(robots ? { robots } : {}),
     ...(ebRobots ? { ebRobots } : {}),
+    ...(wmRobots ? { wmRobots } : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
     ...(stockProbe ? { stockProbe } : {}),
     ...(pcFailures === undefined && pcChallenges === undefined
@@ -397,7 +424,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       kind === "pc"
         ? ["Pokémon Center"]
         : kind === "news"
-          ? [...FEEDS, ...RETAILERS].map((s) => s.name).concat(EB_GAMES.name)
+          ? [...FEEDS, ...RETAILERS].map((s) => s.name).concat(EB_GAMES.name, WALMART.name)
           : ["UPC database"],
     found: fresh.length,
     notified,

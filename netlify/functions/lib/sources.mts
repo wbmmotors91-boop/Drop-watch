@@ -7,6 +7,8 @@
  * third-party signals that do answer a server.
  */
 
+import { gunzipSync } from "node:zlib";
+
 export type Item = {
   key: string;
   title: string;
@@ -363,6 +365,126 @@ export async function pollFeeds(
   return (await Promise.all(perHost)).flat();
 }
 
+export type GzSitemapOptions = {
+  name: string;
+  robotsUrl: string;
+  indexUrl: string;
+  /** Path fragment marking a product URL, e.g. "/ip/". */
+  productPattern: string;
+  /** Refuse a child bigger than this rather than blowing the function's memory. */
+  maxBytes?: number;
+  /** The lastmod we last read for each child, so unchanged ones are skipped. */
+  lastmods?: Record<string, string>;
+};
+
+export type GzSitemapResult = {
+  items: Item[];
+  lastmods: Record<string, string>;
+  blocked: boolean;
+};
+
+/**
+ * Read a sitemap index whose children are gzipped, one child per cycle.
+ *
+ * Walmart Canada's catalogue is far too big to re-read on a schedule, and it
+ * does not need re-reading: the index carries a lastmod per child, so a child
+ * that has not changed costs nothing. Only a changed one is fetched, and only
+ * one per cycle, which keeps a store that never asked us to slow down from
+ * having a reason to start.
+ *
+ * The 1p in Walmart's sitemap names is the part that matters here. Their
+ * first-party products and their marketplace sellers are in separate files,
+ * and Aaron's whole objection to walmart.ca was the marketplace, so only the
+ * 1p index is ever passed in.
+ */
+export async function pollGzSitemapIndex(
+  opts: GzSitemapOptions,
+  include: string[],
+  exclude: string[],
+  notes: string[],
+  disallowed: string[],
+): Promise<GzSitemapResult> {
+  const { name, indexUrl, productPattern, maxBytes = 12_000_000, lastmods = {} } = opts;
+
+  if (isDisallowed(indexUrl, disallowed)) {
+    notes.push(`${name}: their robots.txt disallows the sitemap index, leaving it alone`);
+    return { items: [], lastmods, blocked: false };
+  }
+
+  let indexXml = "";
+  try {
+    indexXml = await grab(indexUrl, 9000);
+  } catch (err) {
+    const refused = String(err).includes("403");
+    notes.push(`${name} sitemap index: ${String(err).slice(0, 60)}`);
+    return { items: [], lastmods, blocked: refused };
+  }
+
+  const children = extractUrlEntries(indexXml, "sitemap").filter(
+    (c) => !isDisallowed(c.loc, disallowed),
+  );
+  if (!children.length) {
+    notes.push(`${name}: no child sitemaps in the index (${describeBody(indexXml)})`);
+    return { items: [], lastmods, blocked: false };
+  }
+
+  const changed = children.filter((c) => lastmods[c.loc] !== c.lastmod);
+  if (!changed.length) {
+    notes.push(`${name}: ${children.length} child sitemaps, none changed since the last check`);
+    return { items: [], lastmods, blocked: false };
+  }
+
+  // One per cycle. There is no drop so urgent that it justifies pulling their
+  // whole catalogue in one go.
+  const child = changed[0];
+  let raw: ArrayBuffer;
+  try {
+    const res = await fetch(child.loc, { headers: { "user-agent": UA, accept: "*/*" } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    raw = await res.arrayBuffer();
+  } catch (err) {
+    const refused = String(err).includes("403");
+    notes.push(`${name} child sitemap: ${String(err).slice(0, 60)}`);
+    return { items: [], lastmods, blocked: refused };
+  }
+
+  if (raw.byteLength > maxBytes) {
+    notes.push(`${name}: ${child.loc.split("/").pop()} is ${Math.round(raw.byteLength / 1e6)}MB, too big to read here`);
+    // Record it as read anyway, or every cycle retries the same oversized file.
+    return { items: [], lastmods: { ...lastmods, [child.loc]: child.lastmod }, blocked: false };
+  }
+
+  let xml = "";
+  try {
+    const buf = Buffer.from(raw);
+    // Served as .gz, so it arrives compressed unless the server also set
+    // Content-Encoding, in which case fetch already decompressed it.
+    xml = buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf).toString("utf8") : buf.toString("utf8");
+  } catch (err) {
+    notes.push(`${name}: could not decompress ${child.loc.split("/").pop()} (${String(err).slice(0, 40)})`);
+    return { items: [], lastmods, blocked: false };
+  }
+
+  const out: Item[] = [];
+  for (const { loc } of extractUrlEntries(xml)) {
+    if (!loc.includes(productPattern)) continue;
+    if (isDisallowed(loc, disallowed)) continue;
+    const title = titleFromUrl(loc.replace(/\/\d+$/, ""));
+    if (!matches(title, include, exclude)) continue;
+    out.push({
+      key: `wm:${loc}`,
+      title,
+      source: name,
+      url: loc,
+      detail: `listed by ${name} itself, not a marketplace seller`,
+    });
+  }
+  notes.push(
+    `${name}: read ${child.loc.split("/").pop()}, ${out.length} sealed matches (${changed.length - 1} child sitemaps still to read)`,
+  );
+  return { items: out, lastmods: { ...lastmods, [child.loc]: child.lastmod }, blocked: false };
+}
+
 export type FlatSitemapOptions = {
   name: string;
   robotsUrl: string;
@@ -569,9 +691,20 @@ export async function pollUpc(
  * question about their data, not their code, so this measures before anything
  * is built on it.
  */
-export function extractUrlEntries(xml: string): { loc: string; lastmod: string }[] {
+/**
+ * Read <loc>/<lastmod> pairs out of a sitemap.
+ *
+ * `tag` is "url" for a urlset and "sitemap" for an index: the two carry the
+ * same pair under different element names, and an index's lastmod is what
+ * tells us which child is worth fetching.
+ */
+export function extractUrlEntries(
+  xml: string,
+  tag: "url" | "sitemap" = "url",
+): { loc: string; lastmod: string }[] {
   const out: { loc: string; lastmod: string }[] = [];
-  for (const block of xml.match(/<url\b[\s\S]*?<\/url>/gi) || []) {
+  const blocks = xml.match(new RegExp(`<${tag}\\b[\\s\\S]*?<\\/${tag}>`, "gi")) || [];
+  for (const block of blocks) {
     const loc = block.match(/<loc>\s*([^<\s]+)\s*<\/loc>/i);
     if (!loc) continue;
     const mod = block.match(/<lastmod>\s*([^<\s]+)\s*<\/lastmod>/i);

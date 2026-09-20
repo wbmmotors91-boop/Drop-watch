@@ -20,6 +20,8 @@ export type Meta = {
   robots?: { rules: string[]; at: number };
   /** The same, for EB Games. Kept apart so one store's rules never govern another. */
   ebRobots?: { rules: string[]; at: number };
+  /** And for Walmart. */
+  wmRobots?: { rules: string[]; at: number };
   /** When a product page was last tested for a readable stock status. */
   lastStockProbe?: number;
   /** The last answer to "will a product page tell us its stock?". */
