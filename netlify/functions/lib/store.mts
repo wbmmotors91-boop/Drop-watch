@@ -32,11 +32,19 @@ export type Meta = {
   pcChallenges?: number;
   pcBlockedUntil?: number;
   seeded?: boolean;
+  /**
+   * Sources whose existing catalogue has already been taken in. A source not
+   * listed here is being read for the first time, and its whole harvest is
+   * the shelf as it already was, not a drop.
+   */
+  seededSources?: string[];
   lastPoll?: number;
   lastUpcPoll?: number;
   lastPcPoll?: number;
   lastManualCheck?: number;
   lastNotes?: string[];
+  /** Per source: "answering" or "refusing", as of its last attempt. */
+  sourceStatus?: Record<string, string>;
   notesByKind?: Record<string, string[]>;
 };
 

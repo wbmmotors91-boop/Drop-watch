@@ -112,3 +112,6 @@ footer { padding: 6px 0 28px; text-align: center; }
   padding: 4px 0; border-top: 1px solid var(--line); word-break: break-word;
 }
 .notes li:first-child { border-top: 0; }
+
+/* A store that is refusing us reads as a warning, not as coverage. */
+.sources li.refusing { color: var(--warn, #e07a4f); }

@@ -81,8 +81,15 @@ async function loadState() {
   $("sources").innerHTML = (body.watching || [])
     .map((s) => {
       const alerts = pushes.includes(s);
-      const label = escapeHtml(s) + (alerts ? " · alerts you" : "");
-      return `<li class="${alerts ? "alerts" : ""}">${label}</li>`;
+      // A store that is refusing us must say so here. Listing it as watched
+      // while it answers nothing is the same as lying about coverage.
+      const refusing = (body.sourceStatus || {})[s] === "refusing";
+      const label =
+        escapeHtml(s) +
+        (alerts ? " · alerts you" : "") +
+        (refusing ? " · not answering us" : "");
+      const cls = [alerts ? "alerts" : "", refusing ? "refusing" : ""].filter(Boolean).join(" ");
+      return `<li class="${cls}">${label}</li>`;
     })
     .join("");
 

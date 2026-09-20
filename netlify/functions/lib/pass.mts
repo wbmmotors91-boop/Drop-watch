@@ -97,6 +97,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let robots: { rules: string[]; at: number } | undefined;
   let ebRobots: { rules: string[]; at: number } | undefined;
   let wmRobots: { rules: string[]; at: number } | undefined;
+  let sourceStatus: Record<string, string> | undefined;
   let ebSkipped = false;
   let stockProbedAt: number | undefined;
   let stockProbe: { at: number; result: string } | undefined;
@@ -227,6 +228,10 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     const probe = stockProbe || priorMeta.stockProbe;
     if (probe) notes.push(probe.result);
 
+    sourceStatus = {
+      "Pokémon Center": sitemap.blocked ? "refusing" : "answering",
+    };
+
   } else if (kind === "news") {
     // Advance the rotation so the Reddit feeds take turns instead of all
     // three asking at once and two of them earning a 429.
@@ -286,6 +291,13 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
           ),
     ]);
     if (wmResult) await writeJson("wmLastmods", wmResult.lastmods);
+    // Record which stores actually answered. A source that is listed as
+    // watched but refusing every request is worse than one that is absent,
+    // because it reads as covered.
+    sourceStatus = {
+      [EB_GAMES.name]: ebSkipped || ebResult?.blocked ? "refusing" : "answering",
+      [WALMART.name]: wmSkipped || wmResult?.blocked ? "refusing" : "answering",
+    };
     if (ebResult && Object.keys(ebResult.validators).length) {
       await writeJson("ebValidators", ebResult.validators);
     }
@@ -329,10 +341,27 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   const keywordsWidened = !firstEver && ranWith !== KEYWORDS_VERSION;
 
 
+  // A source being read for the first time hands over its entire existing
+  // catalogue at once. Every one of those is new to us and none of them is a
+  // drop, so a source's first harvest is always quiet. Adding Walmart proved
+  // why this has to be per source rather than per app: the app had been
+  // seeded for a day, so the global first-run guard did nothing and 60 of
+  // Walmart's existing products landed in the feed looking like arrivals.
+  const seededSources = new Set(meta.seededSources || []);
+  const firstHarvest = new Set(
+    fresh.map((i) => i.source).filter((src) => !seededSources.has(src)),
+  );
+  if (firstHarvest.size) {
+    notes.push(
+      `first look at ${[...firstHarvest].join(", ")}, taking the existing catalogue in quietly`,
+    );
+  }
+  const marked = fresh.map((i) => (firstHarvest.has(i.source) ? { ...i, catalogue: true } : i));
+
   // A quiet add is a product we had simply never looked for before. It goes in
   // the known list so the next diff is right, but it is not a new arrival and
   // must not show up as one.
-  await addItems(fresh, firstEver || keywordsWidened);
+  await addItems(marked, firstEver || keywordsWidened);
 
   // A source that was turned off leaves its entries behind, and they look as
   // current as anything else. Sweep them every pass: it is a no-op once the
@@ -380,7 +409,9 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     if (dropped) notes.push(`${dropped} entries no longer match and were removed from the feed`);
   } else if (fresh.length) {
     // Everything lands in the app; only the authoritative sources buzz.
-    const worthPushing = fresh.filter((i) => PUSH_SOURCES.includes(i.source));
+    // Catalogue entries never buzz, whatever their source: they were on the
+    // shelf before we looked.
+    const worthPushing = marked.filter((i) => PUSH_SOURCES.includes(i.source) && !i.catalogue);
     const batch = worthPushing.slice(0, MAX_PUSH_PER_PASS);
     for (const item of batch) {
       const bits = [item.upc ? `UPC ${item.upc}` : "", `on ${item.source}`]
@@ -398,6 +429,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   await writeJson("meta", {
     ...meta,
     seeded: meta.seeded || seededNow,
+    seededSources: [...new Set([...seededSources, ...firstHarvest])],
     lastNotes: notes,
     notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
     keywordsVersionByKind: { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION },
@@ -406,6 +438,9 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(robots ? { robots } : {}),
     ...(ebRobots ? { ebRobots } : {}),
     ...(wmRobots ? { wmRobots } : {}),
+    ...(sourceStatus
+      ? { sourceStatus: { ...(meta.sourceStatus || {}), ...sourceStatus } }
+      : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
     ...(stockProbe ? { stockProbe } : {}),
     ...(pcFailures === undefined && pcChallenges === undefined

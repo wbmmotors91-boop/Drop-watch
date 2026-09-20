@@ -59,9 +59,10 @@ export const KEYWORDS_VERSION = 7;
 
 /**
  * The moment the feed learned to tell an arrival from the back catalogue
- * (2026-09-19T21:05Z, moved forward once the seen-list cap was fixed: every
- * arrival recorded before that is suspect, because the watch was forgetting
- * products and rediscovering them).
+ * (2026-09-20T11:30Z. Moved forward twice: once when the seen-list cap was
+ * fixed, and again when adding Walmart put its whole existing catalogue in
+ * the feed as if it had just dropped. Nothing recorded before a source has
+ * been seeded is evidence of anything.)
  *
  * Everything found before this was taken in by a seed or a keyword widening,
  * so none of it is evidence that a product just appeared, and a lot of it was
@@ -70,7 +71,7 @@ export const KEYWORDS_VERSION = 7;
  * exactly the kind of thing that loses a race with whichever pass writes next.
  * A constant cannot be lost.
  */
-export const CATALOGUE_EPOCH = 1789851900000;
+export const CATALOGUE_EPOCH = 1789903800000;
 
 /** True when the entry is a genuine arrival rather than the standing catalogue. */
 export function isArrival(item: { catalogue?: boolean; found?: number }): boolean {
