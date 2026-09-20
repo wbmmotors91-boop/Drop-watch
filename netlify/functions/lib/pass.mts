@@ -34,6 +34,14 @@ const MAX_KEYS_PER_SOURCE = 4000;
  */
 const STOCK_PER_CYCLE = 6;
 
+/**
+ * How many products the stock watch will carry.
+ *
+ * At six a cycle and a cycle every five minutes, 300 products come round
+ * about once every four hours, which is the right order for a restock.
+ */
+const WATCHLIST_MAX = 300;
+
 /** How long Pokémon Center's robots.txt is trusted before re-reading it. */
 const ROBOTS_MAX_AGE_MS = 60 * 60 * 1000;
 
@@ -323,10 +331,19 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     // per cycle on a rotation so a long list never becomes a burst of
     // requests.
     if (!wmSkipped) {
-      const stored = await readJson<Item[]>("items", []);
-      const watchable = stored
-        .filter((i) => i.source === WALMART.name && i.url)
-        .map((i) => ({ url: i.url, title: i.title }));
+      // The watch list is its own store, not a filter over the feed. The feed
+      // is capped at 120 entries shared across every source, so deriving the
+      // list from it means whichever source wrote last decides how many
+      // Walmart products are watched, and the answer could easily be none.
+      // A restock watch that silently watches nothing is the worst kind of
+      // broken, because it looks exactly like a quiet week.
+      const priorWatch = await readJson<{ url: string; title: string }[]>("wmWatch", []);
+      const byUrl = new Map(priorWatch.map((w) => [w.url, w]));
+      for (const i of wmResult?.items || []) {
+        if (i.url) byUrl.set(i.url, { url: i.url, title: i.title });
+      }
+      const watchable = [...byUrl.values()].slice(-WATCHLIST_MAX);
+      if (watchable.length !== priorWatch.length) await writeJson("wmWatch", watchable);
       if (watchable.length) {
         const priorStates = await readJson<Record<string, string>>("wmStock", {});
         const cursor = (await readJson<Meta>("meta", {})).stockCursor || 0;
