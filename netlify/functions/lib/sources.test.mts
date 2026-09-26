@@ -1,6 +1,6 @@
 import {
   parseFeed, matches, extractProducts, stripHtml, grab, pollFeeds,
-  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, pollGzSitemapIndex, readStock, pollStock, regionalise, feedsForCycle, skuFromUrl,
+  extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, pollGzSitemapIndex, readStock, pollStock, describeStockPage, regionalise, feedsForCycle, skuFromUrl,
 } from "./sources.mts";
 import {
   KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
@@ -648,6 +648,21 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   check("currently unavailable counts", readStock("Currently Unavailable"), "out");
   check("a page that says nothing is unknown", readStock("<p>Pokemon cards</p>"), "unknown");
   check("buy now counts as in", readStock("<a>Buy now</a>"), "in");
+
+  // Structured data is the page stating its own answer, so it wins over the
+  // buttons, which may be markup for a control the page has disabled.
+  check("schema.org out of stock wins",
+    readStock('<script>{"availability":"http://schema.org/OutOfStock"}</script><button>Add to cart</button>'), "out");
+  check("an availabilityStatus field is read",
+    readStock('{"availabilityStatus":"IN_STOCK"}'), "in");
+  check("and its out value too",
+    readStock('{"availabilityStatus":"OUT_OF_STOCK"}<button>Add to cart</button>'), "out");
+
+  // The diagnostic has to say enough to fix the parser without guessing.
+  const d = describeStockPage('<html><body><div id="__NEXT_DATA__">{"price":1}</div></body></html>');
+  check("the diagnostic reports the size", d.includes("bytes"), true);
+  check("and which markers were there", d.includes("__next_data__") && d.includes("price"), true);
+  check("and says so when there are none", describeStockPage("<p>hi</p>").includes("none of the usual markers"), true);
 }
 
 {

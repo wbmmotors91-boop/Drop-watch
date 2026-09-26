@@ -375,13 +375,49 @@ export async function pollFeeds(
  */
 export function readStock(html: string): "in" | "out" | "unknown" {
   const lower = html.toLowerCase();
-  // Out is checked first: a sold-out page often still carries cart markup for
-  // the button it has disabled, so "add to cart" alone proves nothing.
+
+  // Structured data first, because it is the page stating its own answer
+  // rather than us reading its buttons. Walmart, and anything else using
+  // schema.org product markup, carries one of these even when the visible
+  // page is assembled in the browser afterwards.
+  const outJson = [
+    '"availabilitystatus":"out_of_stock"',
+    '"availability":"out_of_stock"',
+    "schema.org/outofstock",
+    '"instock":false',
+  ];
+  if (outJson.some((w) => lower.includes(w))) return "out";
+  const inJson = [
+    '"availabilitystatus":"in_stock"',
+    '"availability":"in_stock"',
+    "schema.org/instock",
+    '"instock":true',
+  ];
+  if (inJson.some((w) => lower.includes(w))) return "in";
+
+  // Then the visible wording. Out is checked before in: a sold-out page often
+  // still carries cart markup for the button it has disabled, so "add to
+  // cart" alone proves nothing.
   const out = ["out of stock", "sold out", "currently unavailable", "no longer available"];
   if (out.some((w) => lower.includes(w))) return "out";
   const inStock = ["add to cart", "add to bag", "buy now"];
   if (inStock.some((w) => lower.includes(w))) return "in";
   return "unknown";
+}
+
+/**
+ * Describe a page we could not read a stock status from.
+ *
+ * The live app reported "checked 6, 6 unreadable" and there was no way to
+ * tell whether that meant a block page, an empty shell or wording we simply
+ * had not thought of. Guessing at that from here is how the last three
+ * mistakes happened, so the app says what it actually received.
+ */
+export function describeStockPage(html: string): string {
+  const lower = html.toLowerCase();
+  const markers = ["availability", "addtocart", "add to cart", "__next_data__", "schema.org", "price", "robot", "captcha"]
+    .filter((m) => lower.includes(m));
+  return `${html.length} bytes, contains [${markers.join(", ") || "none of the usual markers"}], starts "${html.slice(0, 60).replace(/\s+/g, " ")}"`;
 }
 
 export type StockCheck = {
@@ -410,17 +446,22 @@ export async function pollStock(
   const states: Record<string, string> = {};
   const flips: StockCheck[] = [];
   let refused = 0;
+  // One example is enough to diagnose; a note per page would drown the panel.
+  let mystery = "";
 
   for (const { url, title } of urls) {
     if (isDisallowed(url, disallowed)) continue;
     let state: "in" | "out" | "unknown" = "unknown";
+    let body = "";
     try {
-      state = readStock(await grab(url, 9000));
+      body = await grab(url, 9000);
+      state = readStock(body);
     } catch (err) {
       if (String(err).includes("403")) refused++;
       continue;
     }
     states[url] = state;
+    if (state === "unknown" && !mystery) mystery = describeStockPage(body);
     if (prior[url] === "out" && state === "in") {
       flips.push({ url, title, before: "out", after: "in" });
     }
@@ -433,6 +474,7 @@ export async function pollStock(
       `${counted.filter((s) => s === "unknown").length} unreadable` +
       (refused ? `, ${refused} refused` : ""),
   );
+  if (mystery) notes.push(`${name} unreadable page: ${mystery}`);
   return { states, flips };
 }
 
