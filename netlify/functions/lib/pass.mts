@@ -110,6 +110,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   const notes: string[] = [];
   let items: Item[] = [];
   let pcChildren: string[] | undefined;
+  let childCursor: number | undefined;
   let newsCursor: number | undefined;
   let robots: { rules: string[]; at: number } | undefined;
   let ebRobots: { rules: string[]; at: number } | undefined;
@@ -162,6 +163,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         region: POKEMON_CENTER.region,
         disallowed,
         knownChildren: priorMeta.pcChildren || [],
+        childCursor: (priorMeta.childCursor || 0) + 1,
         validators: await readJson<Record<string, { etag: string; lastModified: string }>>(
           "pcValidators",
           {},
@@ -197,6 +199,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     }
     // Remember the child sitemaps so a challenged index does not stop the watch.
     if (sitemap.children.length) pcChildren = sitemap.children;
+    childCursor = (priorMeta.childCursor || 0) + 1;
 
     // Remember what the server said identifies the list, so the next check can
     // ask "changed?" instead of downloading it again.
@@ -516,6 +519,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
     keywordsVersionByKind: { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION },
     ...(pcChildren ? { pcChildren } : {}),
+    ...(childCursor === undefined ? {} : { childCursor }),
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(stockCursor === undefined ? {} : { stockCursor }),
     ...(robots ? { robots } : {}),

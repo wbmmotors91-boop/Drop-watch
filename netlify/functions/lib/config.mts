@@ -319,6 +319,10 @@ export const POKEMON_CENTER = {
   robotsUrl: "https://www.pokemoncenter.com/robots.txt",
   indexUrl: "https://www.pokemoncenter.com/sitemap.xml",
   childPattern: "product",
+  // Per cycle, not in total. scanChildren rotates the window, so every
+  // product sitemap they publish is covered within a few cycles while the
+  // number of requests per cycle stays where it was when they blocked us for
+  // asking too often.
   maxChildren: 2,
   region: "en-ca",
 };

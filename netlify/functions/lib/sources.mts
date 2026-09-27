@@ -882,6 +882,8 @@ export type SitemapOptions = {
   childPattern?: string;
   /** Hard cap on child sitemaps fetched per cycle. */
   maxChildren?: number;
+  /** Advances each cycle so the child window moves through the whole list. */
+  childCursor?: number;
   /** Paths robots.txt forbids; anything under one of these is skipped. */
   disallowed?: string[];
   /**
@@ -941,7 +943,7 @@ async function scanChildren(
   exclude: string[],
   notes: string[],
 ): Promise<Omit<SitemapResult, "children">> {
-  const { maxChildren = 2, disallowed = [], region = "", validators = {} } = opts;
+  const { maxChildren = 2, disallowed = [], region = "", validators = {}, childCursor = 0 } = opts;
   const out: Item[] = [];
   const lastmods: Record<string, string> = {};
   const nextValidators: Record<string, { etag: string; lastModified: string }> = {};
@@ -951,7 +953,19 @@ async function scanChildren(
   let unchanged = 0;
   let blocked = false;
 
-  for (const child of children.slice(0, maxChildren)) {
+  // Take a window of the list rather than always the first few, so a budget
+  // of two still covers every product sitemap they publish, just over several
+  // cycles. Always reading children[0] and children[1] means a SKU landing in
+  // children[2] is invisible forever, which is the worst possible failure for
+  // a thing whose whole job is spotting new SKUs.
+  const start = children.length ? (childCursor * maxChildren) % children.length : 0;
+  const window = [...children, ...children].slice(start, start + Math.min(maxChildren, children.length));
+  if (children.length > maxChildren) {
+    notes.push(
+      `Pokémon Center: reading ${window.length} of ${children.length} product sitemaps this cycle, on a rotation`,
+    );
+  }
+  for (const child of window) {
     if (isDisallowed(child, disallowed)) {
       notes.push(`Pokemon Center sitemap: robots.txt disallows ${child}`);
       continue;
@@ -1089,9 +1103,9 @@ export async function pollSitemap(
   const preferred = allChildren.filter((u) => u.toLowerCase().includes(childPattern));
   const children = preferred.length ? preferred : allChildren;
   notes.push(
-    `Pokémon Center index: ${allChildren.length} child sitemaps [${allChildren
+    `Pokémon Center index: ${allChildren.length} child sitemaps, ${preferred.length} of them product [${allChildren
       .map((u) => u.split("/").pop())
-      .slice(0, 8)
+      .slice(0, 12)
       .join(", ")}]`,
   );
 

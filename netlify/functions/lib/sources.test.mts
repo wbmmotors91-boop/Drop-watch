@@ -640,6 +640,44 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
 }
 
 {
+  console.log("rotating through the product sitemaps");
+  // Four product sitemaps, a budget of two per cycle. Every one of them must
+  // be read within two cycles; always taking the first two would leave the
+  // last two invisible forever.
+  const index = `<?xml version="1.0"?><sitemapindex>
+    ${[0, 1, 2, 3].map((n) => `<sitemap><loc>https://pc.test/product-${n}.xml</loc></sitemap>`).join("")}
+  </sitemapindex>`;
+  const child = (n: string) =>
+    `<?xml version="1.0"?><urlset><url><loc>https://pc.test/product/${n}/pokemon-tcg-elite-trainer-box-${n}</loc></url></urlset>`;
+
+  const realFetch = globalThis.fetch;
+  const asked: string[] = [];
+  globalThis.fetch = (async (url: any) => {
+    const u = String(url);
+    asked.push(u);
+    const m = u.match(/product-(\d)\.xml/);
+    return {
+      ok: true, status: 200, headers: new Headers(),
+      text: async () => (m ? child(m[1]) : index),
+    };
+  }) as any;
+
+  const read = async (cursor: number) => {
+    asked.length = 0;
+    await pollSitemap(
+      { indexUrl: "https://pc.test/sitemap.xml", childPattern: "product", maxChildren: 2, childCursor: cursor },
+      KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, [],
+    );
+    return asked.filter((u) => u.includes("product-")).map((u) => u.match(/product-(\d)/)![1]);
+  };
+
+  check("the first cycle reads two of them", await read(0), ["0", "1"]);
+  check("the next cycle reads the other two", await read(1), ["2", "3"]);
+  check("and then it comes back round", await read(2), ["0", "1"]);
+  globalThis.fetch = realFetch;
+}
+
+{
   console.log("reading stock off a page");
   check("add to cart means in stock", readStock("<button>Add to cart</button>"), "in");
   check("out of stock wins over cart markup",
