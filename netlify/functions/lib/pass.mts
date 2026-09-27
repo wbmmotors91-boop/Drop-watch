@@ -117,6 +117,8 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let wmRobots: { rules: string[]; at: number } | undefined;
   let sourceStatus: Record<string, string> | undefined;
   let stockCursor: number | undefined;
+  let lastStockTry: number | undefined;
+  let stockWalled: boolean | undefined;
   let restocks: Item[] = [];
   let ebSkipped = false;
   let stockProbedAt: number | undefined;
@@ -340,6 +342,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       // Walmart products are watched, and the answer could easily be none.
       // A restock watch that silently watches nothing is the worst kind of
       // broken, because it looks exactly like a quiet week.
+      const priorMetaNews = await readJson<Meta>("meta", {});
       const priorWatch = await readJson<{ url: string; title: string }[]>("wmWatch", []);
       const byUrl = new Map(priorWatch.map((w) => [w.url, w]));
       for (const i of wmResult?.items || []) {
@@ -347,11 +350,25 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       }
       const watchable = [...byUrl.values()].slice(-WATCHLIST_MAX);
       if (watchable.length !== priorWatch.length) await writeJson("wmWatch", watchable);
-      if (watchable.length) {
+      // Walmart serves this app a captcha page for product pages, though it
+      // serves their sitemap without complaint. Verified 2026-09-27: 7,535
+      // bytes containing "robot" and "captcha". So a restock cannot be read,
+      // and hammering a bot wall six times every five minutes is both
+      // pointless and the kind of thing that gets a sitemap blocked too.
+      //
+      // What is left is one page an hour, purely to notice if that ever
+      // changes. The moment a real stock word comes back, the watch resumes
+      // on its own, because the same code does the reading.
+      const lastTry = priorMetaNews.lastStockTry || 0;
+      const walled = priorMetaNews.stockWalled === true;
+      const budget = walled ? 1 : STOCK_PER_CYCLE;
+      const dueForProbe = !walled || Date.now() - lastTry > STOCK_PROBE_MAX_AGE_MS;
+
+      if (watchable.length && dueForProbe) {
         const priorStates = await readJson<Record<string, string>>("wmStock", {});
-        const cursor = (await readJson<Meta>("meta", {})).stockCursor || 0;
-        const start = (cursor * STOCK_PER_CYCLE) % watchable.length;
-        const slice = [...watchable, ...watchable].slice(start, start + STOCK_PER_CYCLE);
+        const cursor = priorMetaNews.stockCursor || 0;
+        const start = (cursor * budget) % watchable.length;
+        const slice = [...watchable, ...watchable].slice(start, start + budget);
         const { states, flips } = await pollStock(
           slice,
           priorStates,
@@ -360,6 +377,11 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
           WALMART.name,
         );
         stockCursor = cursor + 1;
+        lastStockTry = Date.now();
+        // Walled means every page came back saying nothing about stock. One
+        // readable page is enough to call it open again.
+        const readable = Object.values(states).filter((v) => v !== "unknown").length;
+        stockWalled = readable === 0;
         if (Object.keys(states).length) {
           await writeJson("wmStock", { ...priorStates, ...states });
         }
@@ -373,6 +395,12 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
           detail: "back in stock at Walmart",
         }));
         if (restocks.length) notes.push(`${restocks.length} back in stock`);
+        if (stockWalled) {
+          notes.push(
+            "Walmart restock watch: their product pages answer this app with a bot check, " +
+              "so a restock cannot be read. Retrying one page an hour in case that changes.",
+          );
+        }
       }
     }
   } else {
@@ -522,6 +550,8 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     ...(childCursor === undefined ? {} : { childCursor }),
     ...(newsCursor === undefined ? {} : { newsCursor }),
     ...(stockCursor === undefined ? {} : { stockCursor }),
+    ...(lastStockTry === undefined ? {} : { lastStockTry }),
+    ...(stockWalled === undefined ? {} : { stockWalled }),
     ...(robots ? { robots } : {}),
     ...(ebRobots ? { ebRobots } : {}),
     ...(wmRobots ? { wmRobots } : {}),

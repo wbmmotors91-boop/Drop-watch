@@ -15,6 +15,10 @@ export type Meta = {
   newsCursor?: number;
   /** Advances each pass so the stock watch works through its list in turn. */
   stockCursor?: number;
+  /** When a stock read was last attempted, so a walled store is retried hourly. */
+  lastStockTry?: number;
+  /** True when every product page came back saying nothing about stock. */
+  stockWalled?: boolean;
   /**
    * The keyword version each kind of pass last ran with. Per kind, because
    * whichever pass runs first must not clear the flag for the others.
