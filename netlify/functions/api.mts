@@ -55,6 +55,39 @@ export default async (req: Request, _context: Context) => {
     });
   }
 
+  // "Is X on the site yet?"
+  //
+  // The watch already knows every product URL it has ever matched, so this is
+  // a question it can answer directly instead of Aaron reading a rumour and
+  // waiting to find out. It searches what the stores themselves published,
+  // which is the difference between a fact and a Facebook post.
+  if (route === "find") {
+    const q = (new URL(req.url).searchParams.get("q") || "").trim().toLowerCase();
+    if (q.length < 3) return json({ error: "give me something to look for" }, 400);
+    // Match every word, in any order, against the slug. "delta reign etb"
+    // should find a delta-reign-elite-trainer-box URL.
+    const words = q.split(/\s+/).filter(Boolean);
+    const seen = await readJson<Record<string, string[]>>("seen", {});
+    const hits: { source: string; url: string }[] = [];
+    for (const [source, keys] of Object.entries(seen)) {
+      for (const key of keys) {
+        const url = key.slice(key.indexOf(":") + 1);
+        const hay = url.toLowerCase().replace(/[-_/]+/g, " ");
+        if (words.every((w) => hay.includes(w))) hits.push({ source, url });
+      }
+    }
+    return json({
+      query: q,
+      found: hits.length,
+      hits: hits.slice(0, 25),
+      // So a zero is readable as "not published yet" rather than "the watch
+      // is empty", which are very different answers.
+      searched: Object.fromEntries(
+        Object.entries(seen).map(([source, keys]) => [source, keys.length]),
+      ),
+    });
+  }
+
   if (req.method !== "POST") return json({ error: "not found" }, 404);
 
   if (route === "subscribe") {

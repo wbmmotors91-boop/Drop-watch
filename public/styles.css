@@ -115,3 +115,10 @@ footer { padding: 6px 0 28px; text-align: center; }
 
 /* A store that is refusing us reads as a warning, not as coverage. */
 .sources li.refusing { color: var(--warn, #e07a4f); }
+
+.find { display: flex; gap: .5rem; margin: .5rem 0 .75rem; }
+.find input {
+  flex: 1; min-width: 0; padding: .6rem .7rem; border-radius: 10px;
+  border: 1px solid var(--line, #2a3446); background: var(--bg2, #121824);
+  color: inherit; font: inherit;
+}

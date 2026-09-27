@@ -218,6 +218,46 @@ async function test() {
   }, 2500);
 }
 
+async function find(ev) {
+  ev.preventDefault();
+  const q = $("find-q").value.trim();
+  const box = $("find-results");
+  if (q.length < 3) {
+    box.innerHTML = '<li class="empty">Type a bit more.</li>';
+    return;
+  }
+  box.innerHTML = '<li class="empty">Looking…</li>';
+  const { body } = await api(`find?q=${encodeURIComponent(q)}`);
+  if (!body || body.error) {
+    box.innerHTML = `<li class="empty">${escapeHtml((body && body.error) || "Could not look")}</li>`;
+    return;
+  }
+  if (!body.found) {
+    // Say how much was searched, so nothing found reads as "not published
+    // yet" rather than "this thing is broken".
+    const total = Object.values(body.searched || {}).reduce((a, b) => a + b, 0);
+    box.innerHTML = `<li class="empty">Not on any watched store's published list yet. Searched ${total.toLocaleString()} products.</li>`;
+    return;
+  }
+  box.innerHTML = body.hits
+    .map(
+      (h) =>
+        `<li><a href="${escapeHtml(h.url)}" target="_blank" rel="noopener">${escapeHtml(
+          titleFromUrl(h.url),
+        )}</a><div class="meta"><span class="chip">${escapeHtml(h.source)}</span></div></li>`,
+    )
+    .join("");
+}
+
+// The slug carries the name; the app should not show a raw URL as a title.
+function titleFromUrl(url) {
+  const tail = url.split("?")[0].replace(/\/$/, "").split("/").pop() || url;
+  return decodeURIComponent(tail)
+    .replace(/-\d+$/, "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 async function checkNow() {
   const btn = $("check");
   btn.disabled = true;
@@ -247,6 +287,8 @@ async function boot() {
   $("disable").addEventListener("click", disable);
   $("test").addEventListener("click", test);
   $("check").addEventListener("click", checkNow);
+  const findForm = $("find-form");
+  if (findForm) findForm.addEventListener("submit", find);
   await loadState();
   // Refresh on its own so the button is never the only way to see what's
   // there. Skip the tick while the app is in the background, because a phone
