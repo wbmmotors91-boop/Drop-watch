@@ -69,8 +69,17 @@ export function backoffFor(failures: number): number {
  * outright block, and it is cheaper to ease off then than to recover after.
  */
 const CHALLENGE_GRACE = 3;
-const CHALLENGE_MAX_MS = 30 * 60 * 1000;
+const CHALLENGE_MAX_MS = 10 * 60_000;
 
+/**
+ * How long to leave a challenging host alone.
+ *
+ * Capped at ten minutes rather than thirty. A challenge is not a refusal:
+ * the hard block came from asking too often, and easing off does not reduce
+ * how often we ask, it only makes us blind while we wait. Thirty minutes
+ * blind through a drop window is a worse outcome than a challenge, and the
+ * refusal backoff above still goes to an hour if they actually say no.
+ */
 export function challengeBackoffFor(challenges: number): number {
   if (challenges <= CHALLENGE_GRACE) return 0;
   return Math.min(BACKOFF_BASE_MS * 2 ** (challenges - CHALLENGE_GRACE - 1), CHALLENGE_MAX_MS);

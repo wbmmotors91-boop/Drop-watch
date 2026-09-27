@@ -61,7 +61,7 @@ check("throwing global does not break it", env("PC_TEST"), "from-process");
   check("so are three", challengeBackoffFor(3), 0);
   check("the fourth eases off", challengeBackoffFor(4), 5 * 60 * 1000);
   check("the fifth doubles", challengeBackoffFor(5), 10 * 60 * 1000);
-  check("it caps at half an hour", challengeBackoffFor(20), 30 * 60 * 1000);
+  check("it caps at ten minutes", challengeBackoffFor(20), 10 * 60_000);
   check("a challenge never waits as long as a refusal", challengeBackoffFor(20) < backoffFor(20), true);
 }
 

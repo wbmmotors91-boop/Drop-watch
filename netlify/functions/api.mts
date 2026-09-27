@@ -67,7 +67,14 @@ export default async (req: Request, _context: Context) => {
     // Match every word, in any order, against the slug. "delta reign etb"
     // should find a delta-reign-elite-trainer-box URL.
     const words = q.split(/\s+/).filter(Boolean);
-    const seen = await readJson<Record<string, string[]>>("seen", {});
+    const allSeen = await readJson<Record<string, string[]>>("seen", {});
+    // The seen store still holds keys from sources that were turned off, and
+    // showing "Reddit drops: 26" to someone who asked for Reddit to be
+    // removed reads as the app ignoring him.
+    const live = activeSources();
+    const seen = Object.fromEntries(
+      Object.entries(allSeen).filter(([source]) => live.includes(source)),
+    );
     const hits: { source: string; url: string }[] = [];
     for (const [source, keys] of Object.entries(seen)) {
       for (const key of keys) {
