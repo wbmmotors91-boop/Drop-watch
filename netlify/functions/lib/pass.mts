@@ -51,7 +51,7 @@ export function membershipDiff(
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollGzSitemapIndex, pollRetailers, pollSitemap, pollStock, pollUpc, probeProductPage } from "./sources.mjs";
+import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollGzSitemapIndex, pollRetailers, pollSitemap, pollStock, pollUpc, probeIdentity, probeProductPage } from "./sources.mjs";
 import {
   CANADIAN_TERMS,
   EB_GAMES,
@@ -194,6 +194,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let ebSkipped = false;
   let stockProbedAt: number | undefined;
   let stockProbe: { at: number; result: string } | undefined;
+  let identityProbe: { at: number; result: string } | undefined;
   let pcFailures: number | undefined;
   let pcChallenges: number | undefined;
   let pcBlockedUntil: number | undefined;
@@ -367,6 +368,19 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
           : `none of ${stamps.length} products carry a date in the list, so a page changing is invisible from it`,
       );
     }
+
+    // Once an hour, ask whether the honest version of this app can read their
+    // published list. The app tells every server it is Chrome on a Mac; this
+    // asks the same file for itself under the app's own name, changes nothing
+    // either way, and turns a scope argument into a result.
+    if (!priorMeta.identityProbe || Date.now() - priorMeta.identityProbe.at > STOCK_PROBE_MAX_AGE_MS) {
+      identityProbe = {
+        at: Date.now(),
+        result: await probeIdentity(POKEMON_CENTER.indexUrl, disallowed),
+      };
+    }
+    const identity = identityProbe || priorMeta.identityProbe;
+    if (identity) notes.push(identity.result);
 
     // Once an hour, ask whether a product page will talk to us at all. If it
     // will, a watchlist of the products he actually wants becomes possible and
@@ -711,6 +725,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
     ...(stockProbe ? { stockProbe } : {}),
+    ...(identityProbe ? { identityProbe } : {}),
     ...(pcFailures === undefined && pcChallenges === undefined
       ? {}
       : {

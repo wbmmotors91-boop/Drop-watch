@@ -32,6 +32,45 @@ const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
   "(KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
 
+/**
+ * What the app would say if it named itself.
+ *
+ * The app tells every server it is Chrome on a Mac, which is what most HTTP
+ * clients do and what most CDNs expect, but it is not true and Aaron was given
+ * a scope line that assumed otherwise. Whether the honest version works is a
+ * question with an answer, so it gets asked rather than argued about: once an
+ * hour, one request for the published sitemap index carrying this instead.
+ */
+export const HONEST_UA =
+  "DropWatch/1.0 (personal restock watcher; +https://drop-watch.netlify.app)";
+
+/**
+ * Ask a published file for itself under an honest name and report what came
+ * back, without letting the answer change anything the app does.
+ */
+export async function probeIdentity(url: string, disallowed: string[]): Promise<string> {
+  if (isDisallowed(url, disallowed)) return "identity check: their robots.txt disallows it";
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await fetch(url, {
+      signal: ctl.signal,
+      headers: { "User-Agent": HONEST_UA, Accept: "*/*" },
+      redirect: "follow",
+    });
+    const body = await res.text();
+    const head = body.slice(0, 40).replace(/\s+/g, " ").trim();
+    const xml = body.includes("<sitemapindex") || body.includes("<urlset");
+    return res.ok && xml
+      ? `identity check: naming ourselves honestly works (HTTP ${res.status}, ${body.length} bytes of real sitemap)`
+      : `identity check: naming ourselves honestly gets HTTP ${res.status}, ${body.length} bytes, starts "${head}"`;
+  } catch (err) {
+    return `identity check: naming ourselves honestly failed, ${String(err).slice(0, 50)}`;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Statuses worth one more try. A 403 or 404 will say the same thing twice. */

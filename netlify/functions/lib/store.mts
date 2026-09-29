@@ -34,6 +34,8 @@ export type Meta = {
   lastStockProbe?: number;
   /** The last answer to "will a product page tell us its stock?". */
   stockProbe?: { at: number; result: string };
+  /** The last answer to "does naming ourselves honestly work?", see probeIdentity. */
+  identityProbe?: { at: number; result: string };
   /** Consecutive refusals from Pokémon Center, and when to try them again. */
   pcFailures?: number;
   /** Consecutive challenge pages, eased off before they become refusals. */
