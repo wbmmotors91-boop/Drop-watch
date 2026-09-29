@@ -51,7 +51,7 @@ export function membershipDiff(
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
-import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollGzSitemapIndex, pollRetailers, pollSitemap, pollStock, pollUpc, probeIdentity, probeProductPage } from "./sources.mjs";
+import { canadianOffer, grab, matches, parseDisallowed, pollFeeds, pollFlatSitemap, pollGzSitemapIndex, pollRetailers, pollSitemap, identity, pollStock, pollUpc, probeProductPage } from "./sources.mjs";
 import {
   CANADIAN_TERMS,
   EB_GAMES,
@@ -194,7 +194,6 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   let ebSkipped = false;
   let stockProbedAt: number | undefined;
   let stockProbe: { at: number; result: string } | undefined;
-  let identityProbe: { at: number; result: string } | undefined;
   let pcFailures: number | undefined;
   let pcChallenges: number | undefined;
   let pcBlockedUntil: number | undefined;
@@ -369,18 +368,10 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       );
     }
 
-    // Once an hour, ask whether the honest version of this app can read their
-    // published list. The app tells every server it is Chrome on a Mac; this
-    // asks the same file for itself under the app's own name, changes nothing
-    // either way, and turns a scope argument into a result.
-    if (!priorMeta.identityProbe || Date.now() - priorMeta.identityProbe.at > STOCK_PROBE_MAX_AGE_MS) {
-      identityProbe = {
-        at: Date.now(),
-        result: await probeIdentity(POKEMON_CENTER.indexUrl, disallowed),
-      };
-    }
-    const identity = identityProbe || priorMeta.identityProbe;
-    if (identity) notes.push(identity.result);
+    // Say who the app tells them it is. It used to claim to be Chrome; it now
+    // gives its own name and a contact URL, and their list is served to that
+    // just the same. Worth stating in the diagnostics rather than buried.
+    notes.push(identity());
 
     // Once an hour, ask whether a product page will talk to us at all. If it
     // will, a watchlist of the products he actually wants becomes possible and
@@ -710,7 +701,19 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     seededSources: [...new Set([...seededSources, ...firstHarvest])],
     lastNotes: notes,
     notesByKind: { ...(meta.notesByKind || {}), [kind]: notes },
-    keywordsVersionByKind: { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION },
+    // Only claim to have run with this keyword version once a pass has
+    // actually harvested something under it.
+    //
+    // This is what let Pokémon Center's back catalogue into the feed as finds
+    // on 2026-09-29. The version was bumped, the next pass got a 304 and
+    // harvested nothing, and it still stamped the version. The quiet rebuild
+    // was spent on an empty pass, so when the real 4,768 matches arrived two
+    // cycles later they were ordinary arrivals: old tins in the feed and
+    // notifications for them. The stamp has to ride the intake it is meant to
+    // cover.
+    keywordsVersionByKind: items.length
+      ? { ...(meta.keywordsVersionByKind || {}), [kind]: KEYWORDS_VERSION }
+      : meta.keywordsVersionByKind || {},
     ...(pcChildren ? { pcChildren } : {}),
     ...(childCursor === undefined ? {} : { childCursor }),
     ...(newsCursor === undefined ? {} : { newsCursor }),
@@ -725,7 +728,6 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       : {}),
     ...(stockProbedAt ? { lastStockProbe: stockProbedAt } : {}),
     ...(stockProbe ? { stockProbe } : {}),
-    ...(identityProbe ? { identityProbe } : {}),
     ...(pcFailures === undefined && pcChallenges === undefined
       ? {}
       : {
