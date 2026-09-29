@@ -6,6 +6,7 @@ import {
   CANADIAN_TERMS,
   EB_GAMES,
   FEEDS,
+  FRANCHISE_TERMS,
   WALMART,
   activeSources,
   KEYWORDS_EXCLUDE,
@@ -307,7 +308,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       ebSkipped
         ? Promise.resolve(null)
         : pollFlatSitemap(
-            { ...EB_GAMES, validators: await readJson("ebValidators", {}) },
+            { ...EB_GAMES, franchise: FRANCHISE_TERMS, validators: await readJson("ebValidators", {}) },
             KEYWORDS_INCLUDE,
             KEYWORDS_EXCLUDE,
             notes,
@@ -316,7 +317,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       wmSkipped
         ? Promise.resolve(null)
         : pollGzSitemapIndex(
-            { ...WALMART, lastmods: await readJson("wmLastmods", {}) },
+            { ...WALMART, franchise: FRANCHISE_TERMS, lastmods: await readJson("wmLastmods", {}) },
             KEYWORDS_INCLUDE,
             KEYWORDS_EXCLUDE,
             notes,
@@ -480,6 +481,16 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   const active = activeSources();
   const stale = await pruneItemsBySource((src) => active.includes(src));
   if (stale) notes.push(`${stale} entries from sources no longer watched were removed`);
+
+  // The franchise gate is new, and the entries it would now reject are already
+  // sitting in the feed: a LEGO Formula 1 mystery box and an Upper Deck hockey
+  // tin, both of which he saw. Narrowing a filter without re-judging what it
+  // already let through leaves the visible symptom in place, which is exactly
+  // the mistake the sold-out tins taught.
+  for (const store of [WALMART.name, EB_GAMES.name]) {
+    const wrongGame = await pruneItems(store, (i) => matches(i.title, FRANCHISE_TERMS, []));
+    if (wrongGame) notes.push(`${wrongGame} non-Pokémon entries removed from ${store}`);
+  }
 
   // A restock is not a new listing, so it bypasses the seen/catalogue diff
   // entirely: the product was always there, what changed is that you can buy

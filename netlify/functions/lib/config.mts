@@ -42,6 +42,49 @@ export const KEYWORDS_INCLUDE = [
 ];
 
 /**
+ * A general store sells more than Pokémon, so a general store needs a gate.
+ *
+ * KEYWORDS_INCLUDE is written for a shop that only sells Pokémon, where "tin"
+ * and "mystery box" can only mean one thing. Point it at walmart.ca and it
+ * matches a LEGO Formula 1 "Mystery Box" and an Upper Deck hockey "tin", both
+ * of which turned up in the feed. Pokémon Center is deliberately exempt: its
+ * product names do not say "Pokémon", the same reason the Canadian filter is
+ * never applied to it.
+ *
+ * Set names as well as the word itself, because a retailer sometimes lists a
+ * set by its own name ("Prismatic Evolutions Elite Trainer Box") with nothing
+ * to say which game it belongs to. Missing one of those is the cost of not
+ * sending him a notification about LEGO.
+ */
+export const FRANCHISE_TERMS = [
+  "pokemon",
+  "pokémon",
+  "pikachu",
+  "charizard",
+  "eevee",
+  "mewtwo",
+  "scarlet",
+  "violet",
+  "paldea",
+  "paldean",
+  "prismatic",
+  "mega evolution",
+  "destined rivals",
+  "journey together",
+  "black bolt",
+  "white flare",
+  "delta reign",
+  "phantasmal",
+  "surging sparks",
+  "twilight masquerade",
+  "shrouded fable",
+  "stellar crown",
+  "obsidian flames",
+  "crown zenith",
+  "celebrations",
+];
+
+/**
  * Bumped whenever KEYWORDS_INCLUDE or KEYWORDS_EXCLUDE changes.
  *
  * Widening the product list makes products that already exist match for the

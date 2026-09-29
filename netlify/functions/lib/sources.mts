@@ -488,6 +488,8 @@ export type GzSitemapOptions = {
   maxBytes?: number;
   /** The lastmod we last read for each child, so unchanged ones are skipped. */
   lastmods?: Record<string, string>;
+  /** A general store also has to say which game it is, see FRANCHISE_TERMS. */
+  franchise?: string[];
 };
 
 export type GzSitemapResult = {
@@ -518,6 +520,7 @@ export async function pollGzSitemapIndex(
   disallowed: string[],
 ): Promise<GzSitemapResult> {
   const { name, indexUrl, productPattern, maxBytes = 12_000_000, lastmods = {} } = opts;
+  const franchise = opts.franchise || [];
 
   if (isDisallowed(indexUrl, disallowed)) {
     notes.push(`${name}: their robots.txt disallows the sitemap index, leaving it alone`);
@@ -584,6 +587,8 @@ export async function pollGzSitemapIndex(
     if (isDisallowed(loc, disallowed)) continue;
     const title = titleFromUrl(loc.replace(/\/\d+$/, ""));
     if (!matches(title, include, exclude)) continue;
+    // A general store's "mystery box" is usually not a Pokémon one.
+    if (franchise.length && !matches(title, franchise, [])) continue;
     out.push({
       key: `wm:${loc}`,
       title,
@@ -605,6 +610,8 @@ export type FlatSitemapOptions = {
   /** Path fragment that marks a product URL, e.g. "/shop/". */
   productPattern: string;
   validators?: Record<string, { etag: string; lastModified: string }>;
+  /** A general store also has to say which game it is, see FRANCHISE_TERMS. */
+  franchise?: string[];
 };
 
 export type FlatSitemapResult = {
@@ -633,6 +640,7 @@ export async function pollFlatSitemap(
   disallowed: string[],
 ): Promise<FlatSitemapResult> {
   const { name, sitemapUrl, productPattern, validators = {} } = opts;
+  const franchise = opts.franchise || [];
 
   if (isDisallowed(sitemapUrl, disallowed)) {
     notes.push(`${name}: their robots.txt disallows the sitemap, leaving it alone`);
@@ -673,6 +681,8 @@ export async function pollFlatSitemap(
     // Their slugs end in the product id: strip it so the title reads as a name.
     const title = titleFromUrl(loc.replace(/-\d+$/, ""));
     if (!matches(title, include, exclude)) continue;
+    // A general store's "mystery box" is usually not a Pokémon one.
+    if (franchise.length && !matches(title, franchise, [])) continue;
     out.push({
       key: `eb:${loc}`,
       title,

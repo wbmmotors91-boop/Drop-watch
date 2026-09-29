@@ -76,17 +76,28 @@ export default async (req: Request, _context: Context) => {
       Object.entries(allSeen).filter(([source]) => live.includes(source)),
     );
     const hits: { source: string; url: string }[] = [];
+    const near: { source: string; url: string; score: number }[] = [];
     for (const [source, keys] of Object.entries(seen)) {
       for (const key of keys) {
         const url = key.slice(key.indexOf(":") + 1);
         const hay = url.toLowerCase().replace(/[-_/]+/g, " ");
-        if (words.every((w) => hay.includes(w))) hits.push({ source, url });
+        const score = words.filter((w) => hay.includes(w)).length;
+        if (score === words.length) hits.push({ source, url });
+        else if (score >= 2) near.push({ source, url, score });
       }
     }
+    // He searched "booster box 30th anniversary" for a product Pokémon Center
+    // calls the "30th Celebration Booster Bundle", and was told it was not on
+    // the site. It was. Requiring every word turns a wording difference into a
+    // wrong answer, and a wrong "no" here is worse than a few extra rows, so
+    // the closest partial matches come back too, plainly labelled as close.
+    const close = near.sort((a, b) => b.score - a.score).slice(0, 10)
+      .map(({ source, url }) => ({ source, url }));
     return json({
       query: q,
       found: hits.length,
       hits: hits.slice(0, 25),
+      close: hits.length ? [] : close,
       // So a zero is readable as "not published yet" rather than "the watch
       // is empty", which are very different answers.
       searched: Object.fromEntries(

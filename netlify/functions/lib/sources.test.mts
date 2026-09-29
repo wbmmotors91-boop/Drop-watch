@@ -3,7 +3,7 @@ import {
   extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, pollGzSitemapIndex, readStock, pollStock, describeStockPage, regionalise, feedsForCycle, skuFromUrl,
 } from "./sources.mts";
 import {
-  KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS,
+  KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS, FRANCHISE_TERMS,
   STORE_SIGHTING_PRODUCTS, STORE_SIGHTING_STORES, STORE_SIGHTING_PLACES, EB_GAMES_TERMS,
   CATALOGUE_EPOCH, isArrival,
 } from "./config.mts";
@@ -862,6 +862,34 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   // even for something taken in today.
   check("a flagged entry is never an arrival", isArrival({ found: CATALOGUE_EPOCH + 9e6, catalogue: true }), false);
   check("no timestamp at all is catalogue", isArrival({}), false);
+}
+
+{
+  console.log("a general store has to say which game it is");
+  // Both of these were in the feed, matched on "mystery box" and "tin". They
+  // pass the sealed-product filter and always will; the franchise gate is
+  // what keeps them out of a Pokémon watch.
+  const wrongGame = [
+    "LEGO F1 Collectible Race Cars Limited Edition Model Car Building Kit Mystery Box Fans Formula 1 Kids Boys Girls Ages 6 Gift Idea 71049",
+    "2023 24 UPPER DECK SERIES 2 HOCKEY TIN",
+    "Magic The Gathering Foundations Booster Box",
+  ];
+  for (const title of wrongGame) {
+    check(`kept out: ${title.slice(0, 34)}`, matches(title, FRANCHISE_TERMS, []), false);
+  }
+  // And the gate must not cost a real one. A retailer sometimes names the set
+  // and not the game, which is why the set names are in the list.
+  const rightGame = [
+    "Pokemon TCG Cyclizar Ex Box",
+    "Pokemon Sun Moon Crimson Invasion Elite Trainer Box English Only",
+    "Prismatic Evolutions Elite Trainer Box",
+    "Scarlet Violet Surging Sparks Booster Bundle",
+    "Delta Reign Elite Trainer Box",
+  ];
+  for (const title of rightGame) {
+    check(`let through: ${title.slice(0, 34)}`, matches(title, FRANCHISE_TERMS, []), true);
+    check(`and still sealed: ${title.slice(0, 26)}`, matches(title, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE), true);
+  }
 }
 
 console.log(fails ? `\n${fails} failed` : "\nall passed (parsers, news gate, retries, staggering, sitemap)");

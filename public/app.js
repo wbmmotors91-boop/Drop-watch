@@ -232,21 +232,24 @@ async function find(ev) {
     box.innerHTML = `<li class="empty">${escapeHtml((body && body.error) || "Could not look")}</li>`;
     return;
   }
+  const row = (h) =>
+    `<li><a href="${escapeHtml(h.url)}" target="_blank" rel="noopener">${escapeHtml(
+      titleFromUrl(h.url),
+    )}</a><div class="meta"><span class="chip">${escapeHtml(h.source)}</span></div></li>`;
   if (!body.found) {
+    // A store's name for a set is rarely the name you have in your head, so
+    // an exact miss shows the nearest things on the list before it says no.
+    const close = body.close || [];
     // Say how much was searched, so nothing found reads as "not published
     // yet" rather than "this thing is broken".
     const total = Object.values(body.searched || {}).reduce((a, b) => a + b, 0);
-    box.innerHTML = `<li class="empty">Not on any watched store's published list yet. Searched ${total.toLocaleString()} products.</li>`;
+    const no = `<li class="empty">Nothing matching all of that. Searched ${total.toLocaleString()} products.</li>`;
+    box.innerHTML = close.length
+      ? `${no}<li class="empty">Closest on the list:</li>${close.map(row).join("")}`
+      : no;
     return;
   }
-  box.innerHTML = body.hits
-    .map(
-      (h) =>
-        `<li><a href="${escapeHtml(h.url)}" target="_blank" rel="noopener">${escapeHtml(
-          titleFromUrl(h.url),
-        )}</a><div class="meta"><span class="chip">${escapeHtml(h.source)}</span></div></li>`,
-    )
-    .join("");
+  box.innerHTML = body.hits.map(row).join("");
 }
 
 // The slug carries the name; the app should not show a raw URL as a title.
