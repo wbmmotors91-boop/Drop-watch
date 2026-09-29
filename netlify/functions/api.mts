@@ -75,14 +75,22 @@ export default async (req: Request, _context: Context) => {
     const seen = Object.fromEntries(
       Object.entries(allSeen).filter(([source]) => live.includes(source)),
     );
-    const hits: { source: string; url: string }[] = [];
+    // The feed keeps a first-seen stamp for as many products as it holds, and
+    // "when did you first see this" is the question behind "why was I not
+    // told". Where the stamp is still there, say it.
+    const firstSeen = new Map(
+      (await readJson<{ url?: string; found?: number }[]>("items", []))
+        .filter((i) => i.url && i.found)
+        .map((i) => [i.url as string, i.found as number]),
+    );
+    const hits: { source: string; url: string; found?: number }[] = [];
     const near: { source: string; url: string; score: number }[] = [];
     for (const [source, keys] of Object.entries(seen)) {
       for (const key of keys) {
         const url = key.slice(key.indexOf(":") + 1);
         const hay = url.toLowerCase().replace(/[-_/]+/g, " ");
         const score = words.filter((w) => hay.includes(w)).length;
-        if (score === words.length) hits.push({ source, url });
+        if (score === words.length) hits.push({ source, url, found: firstSeen.get(url) });
         else if (score >= 2) near.push({ source, url, score });
       }
     }

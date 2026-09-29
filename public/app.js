@@ -235,7 +235,9 @@ async function find(ev) {
   const row = (h) =>
     `<li><a href="${escapeHtml(h.url)}" target="_blank" rel="noopener">${escapeHtml(
       titleFromUrl(h.url),
-    )}</a><div class="meta"><span class="chip">${escapeHtml(h.source)}</span></div></li>`;
+    )}</a><div class="meta"><span class="chip">${escapeHtml(h.source)}</span>${
+      h.found ? `<span>first seen ${escapeHtml(ago(h.found))}</span>` : ""
+    }</div></li>`;
   if (!body.found) {
     // A store's name for a set is rarely the name you have in your head, so
     // an exact miss shows the nearest things on the list before it says no.
