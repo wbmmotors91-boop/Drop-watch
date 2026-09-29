@@ -240,7 +240,6 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       // is the only route left to a restock alert, so measure it before
       // claiming anything: count the entries that carry a date at all, and
       // the known ones whose date moved since the last read.
-      const dated = Object.values(now).filter(Boolean).length;
       const touched = Object.keys(now).filter(
         (k) => k in previous && now[k] && previous[k] && now[k] !== previous[k],
       );
@@ -248,9 +247,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         notes.push(
           `list changed: ${added.length} added, ${removed.length} removed, ${Object.keys(now).length} total`,
         );
-        notes.push(
-          `${dated} of ${Object.keys(now).length} entries carry a date; ${touched.length} known products changed date this cycle`,
-        );
+        notes.push(`${touched.length} known products changed date this cycle`);
         if (touched.length) {
           notes.push(`changed: ${touched.slice(0, 3).map((k) => k.split("/").pop()).join(", ")}`);
         }
@@ -259,6 +256,21 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
         }
       }
       await writeJson("pcLastmod", now);
+    }
+
+    // Whether their list dates its entries at all is a standing fact about
+    // what can be read, so it is said on every cycle that reads anything,
+    // not only on a cycle where something changed.
+    if (sitemap.items.length) {
+      const stamps = Object.values(sitemap.lastmods);
+      const dated = stamps.filter(Boolean).length;
+      notes.push(
+        dated
+          ? `${dated} of ${stamps.length} products carry a date in the list${
+              stamps.find(Boolean) ? ` (e.g. ${String(stamps.find(Boolean)).slice(0, 25)})` : ""
+            }`
+          : `none of ${stamps.length} products carry a date in the list, so a page changing is invisible from it`,
+      );
     }
 
     // Once an hour, ask whether a product page will talk to us at all. If it
