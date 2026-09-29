@@ -902,6 +902,13 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
     "Pokemon TCG Scarlet Violet Booster Pack",
     "Pokemon Trading Card Game Classic",
     "Pokemon TCG Prismatic Evolutions Surprise Box",
+    // Named with no format word the list knows, and no "TCG" either. A set
+    // name in the filter is a set missed the first time they publish one
+    // nobody has heard of, so the format words have to stand alone.
+    "Mega Evolution Bundle",
+    "Wind And Wave Box",
+    "Team Rocket Collection",
+    "Phantasmal Flames Pack",
   ];
   for (const title of want) {
     check(`watched: ${title.slice(0, 40)}`, matches(title, PC_KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE), true);

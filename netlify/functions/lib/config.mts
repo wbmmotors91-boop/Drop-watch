@@ -58,12 +58,14 @@ export const PC_KEYWORDS_INCLUDE = [
   "pokemon tcg",
   "pokémon tcg",
   "trading card game",
+  // Boxes, bundles, ETBs and packs, named plainly and with no set in the
+  // list: a set name in a filter is a set you miss the first time they
+  // publish one you have not heard of.
   "booster",
-  "card pack",
-  "single pack",
-  "three pack",
-  "3 pack",
-  "6 packs",
+  "bundle",
+  "pack",
+  "box",
+  "collection",
   ...KEYWORDS_INCLUDE,
 ];
 
@@ -124,11 +126,14 @@ export const FRANCHISE_TERMS = [
 // fire a notification for every one. Bumping this spends the existing quiet
 // -rebuild path on that pass: everything is taken in, marked catalogue, and
 // nothing buzzes. One pass is all it needs; the cap fix keeps it that way.
+// 9: "Any set though any drop and any available products / For boxes bundles
+// etb packs". Bare "box", "bundle", "pack" and "collection" added, so a
+// product does not have to be named in a format the list happens to know.
 // 8: Pokémon Center widened from sealed product to the whole card line, and
 // the other two stores turned off. Widening makes thousands of products that
 // were always there match for the first time; without this bump every one of
 // them would arrive as a notification.
-export const KEYWORDS_VERSION = 8;
+export const KEYWORDS_VERSION = 9;
 
 /**
  * The moment the feed learned to tell an arrival from the back catalogue
