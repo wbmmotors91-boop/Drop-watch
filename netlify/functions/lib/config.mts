@@ -42,6 +42,32 @@ export const KEYWORDS_INCLUDE = [
 ];
 
 /**
+ * What to watch on Pokémon Center itself: the whole trading card line.
+ *
+ * The list above is a sealed-product filter, written when the ask was elite
+ * trainer boxes and booster boxes. Aaron now wants every card product the
+ * store puts up, so on Pokémon Center the gate is the product line rather
+ * than the format: anything they call TCG, plus anything named as a booster
+ * or a pack, plus everything the sealed list already caught.
+ *
+ * KEYWORDS_EXCLUDE still applies, which is what keeps plush, sleeves,
+ * playmats, deck boxes and the rest of the merchandise out. Pokémon Center
+ * sells far more of that than it sells cards.
+ */
+export const PC_KEYWORDS_INCLUDE = [
+  "pokemon tcg",
+  "pokémon tcg",
+  "trading card game",
+  "booster",
+  "card pack",
+  "single pack",
+  "three pack",
+  "3 pack",
+  "6 packs",
+  ...KEYWORDS_INCLUDE,
+];
+
+/**
  * A general store sells more than Pokémon, so a general store needs a gate.
  *
  * KEYWORDS_INCLUDE is written for a shop that only sells Pokémon, where "tin"
@@ -98,7 +124,11 @@ export const FRANCHISE_TERMS = [
 // fire a notification for every one. Bumping this spends the existing quiet
 // -rebuild path on that pass: everything is taken in, marked catalogue, and
 // nothing buzzes. One pass is all it needs; the cap fix keeps it that way.
-export const KEYWORDS_VERSION = 7;
+// 8: Pokémon Center widened from sealed product to the whole card line, and
+// the other two stores turned off. Widening makes thousands of products that
+// were always there match for the first time; without this bump every one of
+// them would arrive as a notification.
+export const KEYWORDS_VERSION = 8;
 
 /**
  * The moment the feed learned to tell an arrival from the back catalogue
@@ -386,8 +416,21 @@ export const PUSH_SOURCES = ["Pokémon Center"];
  * forever looking current. Derived from the lists above rather than written
  * out, so it cannot drift from what is actually being read.
  */
+/**
+ * Walmart and EB Games are off.
+ *
+ * Asked for on 2026-09-29: "I only want Pokémon Center". Walmart could only
+ * ever say when it started listing something, never whether it was in stock,
+ * and EB Games refused this app's server outright. The readers stay in the
+ * code because turning one back on is a one-word change, but nothing calls
+ * them and their entries are swept out of the feed by the sweep below.
+ */
+export const RETAIL_STORES_ENABLED = false;
+
 export function activeSources(): string[] {
-  return ["Pokémon Center", EB_GAMES.name, WALMART.name, ...FEEDS.map((f) => f.name), ...RETAILERS.map((r) => r.name)]
+  return ["Pokémon Center"]
+    .concat(RETAIL_STORES_ENABLED ? [EB_GAMES.name, WALMART.name] : [])
+    .concat(FEEDS.map((f) => f.name), RETAILERS.map((r) => r.name))
     .concat(UPC_QUERIES.length ? ["UPC database"] : []);
 }
 

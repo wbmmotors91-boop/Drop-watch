@@ -3,7 +3,7 @@ import {
   extractLocs, extractUrlEntries, canadianOffer, slugWords, titleFromUrl, parseDisallowed, pollSitemap, pollFlatSitemap, pollGzSitemapIndex, readStock, pollStock, describeStockPage, regionalise, feedsForCycle, skuFromUrl,
 } from "./sources.mts";
 import {
-  KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS, FRANCHISE_TERMS,
+  KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, CANADIAN_TERMS, FRANCHISE_TERMS, PC_KEYWORDS_INCLUDE,
   STORE_SIGHTING_PRODUCTS, STORE_SIGHTING_STORES, STORE_SIGHTING_PLACES, EB_GAMES_TERMS,
   CATALOGUE_EPOCH, isArrival,
 } from "./config.mts";
@@ -889,6 +889,33 @@ check("strip nested html", stripHtml("<div><script>bad()</script>Hello <b>there<
   for (const title of rightGame) {
     check(`let through: ${title.slice(0, 34)}`, matches(title, FRANCHISE_TERMS, []), true);
     check(`and still sealed: ${title.slice(0, 26)}`, matches(title, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE), true);
+  }
+}
+
+{
+  console.log("Pokemon Center: the whole card line, not just sealed boxes");
+  // The one that started this. Its page was up before it went on sale, so no
+  // keyword would have caught the sale, but it has to be matched regardless.
+  const want = [
+    "Pokemon TCG 30th Celebration Booster Bundle 6 Packs",
+    "Pokemon TCG 30th Celebration Pokemon Center Elite Trainer Box",
+    "Pokemon TCG Scarlet Violet Booster Pack",
+    "Pokemon Trading Card Game Classic",
+    "Pokemon TCG Prismatic Evolutions Surprise Box",
+  ];
+  for (const title of want) {
+    check(`watched: ${title.slice(0, 40)}`, matches(title, PC_KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE), true);
+  }
+  // Widening to the whole line must not drag the merchandise in with it.
+  const dont = [
+    "Pikachu Plush 8 Inch",
+    "Pokemon TCG Card Sleeves Pikachu 65ct",
+    "Eevee Playmat",
+    "Pokemon TCG Deck Box Charizard",
+    "Snorlax Backpack",
+  ];
+  for (const title of dont) {
+    check(`left alone: ${title.slice(0, 40)}`, matches(title, PC_KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE), false);
   }
 }
 

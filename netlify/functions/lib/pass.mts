@@ -7,6 +7,8 @@ import {
   EB_GAMES,
   FEEDS,
   FRANCHISE_TERMS,
+  PC_KEYWORDS_INCLUDE,
+  RETAIL_STORES_ENABLED,
   WALMART,
   activeSources,
   KEYWORDS_EXCLUDE,
@@ -181,7 +183,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
           {},
         ),
       },
-      KEYWORDS_INCLUDE,
+      PC_KEYWORDS_INCLUDE,
       KEYWORDS_EXCLUDE,
       notes,
     );
@@ -232,10 +234,26 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       const now = sitemap.lastmods;
       const added = Object.keys(now).filter((k) => !(k in previous));
       const removed = before.filter((k) => !(k in now));
+      // Does a product's entry carry a date, and does that date move when the
+      // page changes? If it does, a product going on sale is readable from
+      // the list alone, without touching the product page they wall off. That
+      // is the only route left to a restock alert, so measure it before
+      // claiming anything: count the entries that carry a date at all, and
+      // the known ones whose date moved since the last read.
+      const dated = Object.values(now).filter(Boolean).length;
+      const touched = Object.keys(now).filter(
+        (k) => k in previous && now[k] && previous[k] && now[k] !== previous[k],
+      );
       if (before.length) {
         notes.push(
           `list changed: ${added.length} added, ${removed.length} removed, ${Object.keys(now).length} total`,
         );
+        notes.push(
+          `${dated} of ${Object.keys(now).length} entries carry a date; ${touched.length} known products changed date this cycle`,
+        );
+        if (touched.length) {
+          notes.push(`changed: ${touched.slice(0, 3).map((k) => k.split("/").pop()).join(", ")}`);
+        }
         if (removed.length) {
           notes.push(`left the list: ${removed.slice(0, 3).map((k) => k.split("/").pop()).join(", ")}`);
         }
@@ -276,7 +294,9 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     const ebPrior = await readJson<Meta>("meta", {});
     const ebCached = ebPrior.ebRobots;
     let ebDisallowed: string[] = [];
-    if (ebCached && Date.now() - ebCached.at < ROBOTS_MAX_AGE_MS) {
+    if (!RETAIL_STORES_ENABLED) {
+      ebSkipped = true;
+    } else if (ebCached && Date.now() - ebCached.at < ROBOTS_MAX_AGE_MS) {
       ebDisallowed = ebCached.rules;
     } else {
       try {
@@ -291,7 +311,9 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     const wmCached = ebPrior.wmRobots;
     let wmDisallowed: string[] = [];
     let wmSkipped = false;
-    if (wmCached && Date.now() - wmCached.at < ROBOTS_MAX_AGE_MS) {
+    if (!RETAIL_STORES_ENABLED) {
+      wmSkipped = true;
+    } else if (wmCached && Date.now() - wmCached.at < ROBOTS_MAX_AGE_MS) {
       wmDisallowed = wmCached.rules;
     } else {
       try {
@@ -305,7 +327,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     const [feedItems, retailItems, ebResult, wmResult] = await Promise.all([
       pollFeeds(FEEDS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes, NEWS_REQUIRE_ANY, 20000, newsCursor),
       pollRetailers(RETAILERS, KEYWORDS_INCLUDE, KEYWORDS_EXCLUDE, notes),
-      ebSkipped
+      ebSkipped || !RETAIL_STORES_ENABLED
         ? Promise.resolve(null)
         : pollFlatSitemap(
             { ...EB_GAMES, franchise: FRANCHISE_TERMS, validators: await readJson("ebValidators", {}) },
@@ -314,7 +336,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
             notes,
             ebDisallowed,
           ),
-      wmSkipped
+      wmSkipped || !RETAIL_STORES_ENABLED
         ? Promise.resolve(null)
         : pollGzSitemapIndex(
             { ...WALMART, franchise: FRANCHISE_TERMS, lastmods: await readJson("wmLastmods", {}) },
@@ -328,10 +350,12 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
     // Record which stores actually answered. A source that is listed as
     // watched but refusing every request is worse than one that is absent,
     // because it reads as covered.
-    sourceStatus = {
-      [EB_GAMES.name]: ebSkipped || ebResult?.blocked ? "refusing" : "answering",
-      [WALMART.name]: wmSkipped || wmResult?.blocked ? "refusing" : "answering",
-    };
+    sourceStatus = RETAIL_STORES_ENABLED
+      ? {
+          [EB_GAMES.name]: ebSkipped || ebResult?.blocked ? "refusing" : "answering",
+          [WALMART.name]: wmSkipped || wmResult?.blocked ? "refusing" : "answering",
+        }
+      : {};
     if (ebResult && Object.keys(ebResult.validators).length) {
       await writeJson("ebValidators", ebResult.validators);
     }
@@ -487,7 +511,7 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   // tin, both of which he saw. Narrowing a filter without re-judging what it
   // already let through leaves the visible symptom in place, which is exactly
   // the mistake the sold-out tins taught.
-  for (const store of [WALMART.name, EB_GAMES.name]) {
+  for (const store of RETAIL_STORES_ENABLED ? [WALMART.name, EB_GAMES.name] : []) {
     const wrongGame = await pruneItems(store, (i) => matches(i.title, FRANCHISE_TERMS, []));
     if (wrongGame) notes.push(`${wrongGame} non-Pokémon entries removed from ${store}`);
   }
