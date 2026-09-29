@@ -120,6 +120,15 @@ export function trimSeen(
 
 export async function runPass(kind: PassKind): Promise<PassResult> {
   const notes: string[] = [];
+
+  // Turning a source off has to clear its entries now, not whenever a pass
+  // happens to run all the way through. Pokémon Center backing off returns
+  // from this function early, and while it does, a store Aaron asked to have
+  // removed would sit in his feed looking current. So this goes first.
+  const watched = activeSources();
+  const gone = await pruneItemsBySource((src) => watched.includes(src));
+  if (gone) notes.push(`${gone} entries from sources no longer watched were removed`);
+
   let items: Item[] = [];
   let pcChildren: string[] | undefined;
   let childCursor: number | undefined;
@@ -509,14 +518,6 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   // the known list so the next diff is right, but it is not a new arrival and
   // must not show up as one.
   await addItems(marked, firstEver || keywordsWidened);
-
-  // A source that was turned off leaves its entries behind, and they look as
-  // current as anything else. Sweep them every pass: it is a no-op once the
-  // feed is clean, and it means changing the source list is one edit rather
-  // than an edit plus a cleanup nobody remembers to do.
-  const active = activeSources();
-  const stale = await pruneItemsBySource((src) => active.includes(src));
-  if (stale) notes.push(`${stale} entries from sources no longer watched were removed`);
 
   // The franchise gate is new, and the entries it would now reject are already
   // sitting in the feed: a LEGO Formula 1 mystery box and an Upper Deck hockey
