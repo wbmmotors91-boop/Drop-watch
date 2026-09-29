@@ -1,3 +1,53 @@
+/**
+ * Judge who left Pokémon Center's list and who came back.
+ *
+ * Only children genuinely re-read this cycle are judged. A key missing from
+ * this cycle's totals is usually a child sitemap nobody opened, because the
+ * read window rotates and a child can answer 304; treating that as a departure
+ * would invent a restock out of a rotation.
+ *
+ * `departed` carries keys that have left and are being watched for a return,
+ * with the moment they went. A key coming back clears its entry and is
+ * reported as rejoined, which is the restock candidate.
+ */
+export function membershipDiff(
+  priorMembers: Record<string, string[]>,
+  membership: Record<string, string[]>,
+  priorDeparted: Record<string, number>,
+  now: number,
+): {
+  members: Record<string, string[]>;
+  departed: Record<string, number>;
+  left: string[];
+  rejoined: string[];
+} {
+  const members = { ...priorMembers };
+  const departed = { ...priorDeparted };
+  const left: string[] = [];
+  const rejoined: string[] = [];
+
+  for (const child of Object.keys(membership)) {
+    const present = new Set(membership[child]);
+    const before = priorMembers[child] || [];
+    // The first read of a child has no before, so nothing can have left it.
+    for (const key of before) {
+      if (!present.has(key)) {
+        departed[key] = now;
+        left.push(key);
+      }
+    }
+    for (const key of present) {
+      if (departed[key]) {
+        rejoined.push(key);
+        delete departed[key];
+      }
+    }
+    members[child] = [...present];
+  }
+
+  return { members, departed, left, rejoined };
+}
+
 /** One polling pass: fetch, diff against what we have seen, notify. */
 
 import type { Item } from "./sources.mjs";
@@ -230,39 +280,75 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
       await writeJson("pcValidators", sitemap.validators);
     }
 
-    // Does their list track stock at all?
+    // The one restock signal that does not need the walled product page.
     //
-    // A restock is invisible if the product URL simply stays put. But some
-    // stores drop sold-out products from their sitemap and re-add them when
-    // stock returns, and if Pokémon Center does that, a restock already looks
-    // like a new arrival and is already caught. Watching what leaves the list
-    // is the only way to tell which world we are in, and it costs nothing.
+    // A product going on sale is invisible if its URL simply stays put. But if
+    // Pokémon Center drops a sold-out product from its list and puts it back
+    // when stock returns, then membership of the list carries a direction that
+    // a modification date never can: gone, then back, is a restock. A date
+    // moves identically for a price edit, an image swap and a bulk republish,
+    // which is why this is tracked and that is not.
+    //
+    // Whether they actually do that is still unproven, and this is how it gets
+    // proven: if nothing ever leaves the list, nothing here ever fires and the
+    // answer is no. Either way it is recorded rather than guessed at.
+    //
+    // Membership is judged per child sitemap and only for children genuinely
+    // re-read this cycle. The window rotates and a child can answer 304, so a
+    // key absent from this cycle's totals is usually a file nobody opened, and
+    // treating that as a departure would invent restocks out of a rotation.
+    const readThisCycle = Object.keys(sitemap.membership);
+    if (readThisCycle.length) {
+      const priorMembers = await readJson<Record<string, string[]>>("pcMembers", {});
+      const priorDeparted = await readJson<Record<string, number>>("pcDeparted", {});
+      const { members, departed, left, rejoined } = membershipDiff(
+        priorMembers,
+        sitemap.membership,
+        priorDeparted,
+        Date.now(),
+      );
+
+      await writeJson("pcMembers", members);
+      await writeJson("pcDeparted", departed);
+
+      const waiting = Object.keys(departed).length;
+      notes.push(
+        `list membership: ${left.length} left, ${rejoined.length} came back, ${waiting} away and being watched for a return`,
+      );
+      if (left.length) {
+        notes.push(
+          "a product leaving their list is the first half of a restock signal; " +
+            "if one comes back, that is the alert",
+        );
+      }
+
+      // A return is a restock candidate, so it takes the restock path: it
+      // bypasses the new-arrival diff, because the URL is not new and never
+      // will be again, and it always buzzes.
+      if (rejoined.length) {
+        const byKey = new Map(sitemap.items.map((i) => [i.key, i]));
+        restocks = rejoined
+          .map((k) => byKey.get(k))
+          .filter((i): i is Item => Boolean(i))
+          .map((i) => ({
+            ...i,
+            key: `rejoined:${i.key}:${Date.now()}`,
+            detail: "back on Pokémon Center's list after leaving it, which usually means stock",
+          }));
+      }
+    }
+
+    // Keep the date reading too, as a measurement rather than a signal. If
+    // their dates turn out to move per product, that is worth knowing; it is
+    // not worth alerting on, because it moves for any edit at all.
     if (!sitemap.allUnchanged && sitemap.items.length) {
       const previous = await readJson<Record<string, string>>("pcLastmod", {});
-      const before = Object.keys(previous);
       const now = sitemap.lastmods;
-      const added = Object.keys(now).filter((k) => !(k in previous));
-      const removed = before.filter((k) => !(k in now));
-      // Does a product's entry carry a date, and does that date move when the
-      // page changes? If it does, a product going on sale is readable from
-      // the list alone, without touching the product page they wall off. That
-      // is the only route left to a restock alert, so measure it before
-      // claiming anything: count the entries that carry a date at all, and
-      // the known ones whose date moved since the last read.
       const touched = Object.keys(now).filter(
         (k) => k in previous && now[k] && previous[k] && now[k] !== previous[k],
       );
-      if (before.length) {
-        notes.push(
-          `list changed: ${added.length} added, ${removed.length} removed, ${Object.keys(now).length} total`,
-        );
+      if (Object.keys(previous).length) {
         notes.push(`${touched.length} known products changed date this cycle`);
-        if (touched.length) {
-          notes.push(`changed: ${touched.slice(0, 3).map((k) => k.split("/").pop()).join(", ")}`);
-        }
-        if (removed.length) {
-          notes.push(`left the list: ${removed.slice(0, 3).map((k) => k.split("/").pop()).join(", ")}`);
-        }
       }
       await writeJson("pcLastmod", now);
     }
@@ -537,7 +623,15 @@ export async function runPass(kind: PassKind): Promise<PassResult> {
   if (restocks.length) {
     await addItems(restocks);
     for (const r of restocks.slice(0, MAX_PUSH_PER_PASS)) {
-      const res = await pushAll(`Back in stock: ${r.title.slice(0, 70)}`, `at ${r.source}`, r.url);
+      // The headline says what was actually observed. A rejoined listing is
+      // strong evidence of stock but it is not a read of the buy button, and
+      // promising the stronger thing is how trust gets spent.
+      const back = r.key.startsWith("rejoined:");
+      const res = await pushAll(
+        `${back ? "Back on sale" : "Back in stock"}: ${r.title.slice(0, 70)}`,
+        r.detail || `at ${r.source}`,
+        r.url,
+      );
       notified += res.sent;
     }
   }

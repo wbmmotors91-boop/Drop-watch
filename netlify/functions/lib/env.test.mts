@@ -1,5 +1,5 @@
 import { env, itemsAfterPrune } from "./store.mjs";
-import { backoffFor, challengeBackoffFor, trimSeen } from "./pass.mjs";
+import { backoffFor, challengeBackoffFor, membershipDiff, trimSeen } from "./pass.mjs";
 
 let fails = 0;
 const check = (n: string, got: any, want: any) => {
@@ -85,6 +85,52 @@ check("throwing global does not break it", env("PC_TEST"), "from-process");
   check("other sources are trimmed on their own count", Object.keys(trimSeen({ pc: keys(3) , news: keys(2) }, { pc: 3 }, 800)).length, 2);
 }
 
+
+
+{
+  console.log("membershipDiff: who left the list and who came back");
+  const A = "https://www.pokemoncenter.com/sitemap-product-1.xml";
+  const B = "https://www.pokemoncenter.com/sitemap-product-2.xml";
+
+  // A child read for the first time cannot have lost anything.
+  const first = membershipDiff({}, { [A]: ["pc:x", "pc:y"] }, {}, 1000);
+  check("a first read reports nothing left", first.left.length, 0);
+  check("and nothing rejoined", first.rejoined.length, 0);
+  check("but it records who is there", first.members[A].length, 2);
+
+  // A product disappearing is half a restock signal: remembered, not alerted.
+  const gone = membershipDiff({ [A]: ["pc:x", "pc:y"] }, { [A]: ["pc:x"] }, {}, 2000);
+  check("a product leaving is noticed", gone.left.join(), "pc:y");
+  check("and is remembered with when it went", gone.departed["pc:y"], 2000);
+  check("leaving on its own is not a restock", gone.rejoined.length, 0);
+
+  // Coming back is the alert.
+  const back = membershipDiff({ [A]: ["pc:x"] }, { [A]: ["pc:x", "pc:y"] }, { "pc:y": 2000 }, 3000);
+  check("coming back is the restock signal", back.rejoined.join(), "pc:y");
+  check("and it stops being watched for", back.departed["pc:y"], undefined);
+
+  // The one that would invent restocks: a child nobody opened this cycle.
+  const rotated = membershipDiff(
+    { [A]: ["pc:x"], [B]: ["pc:z"] },
+    { [A]: ["pc:x"] },
+    {},
+    4000,
+  );
+  check("an unread child loses nobody", rotated.left.length, 0);
+  check("and its membership is left as it was", rotated.members[B].join(), "pc:z");
+
+  // A product that was never seen before is an arrival, not a return, and the
+  // arrival diff handles it. This must not double as a restock.
+  const brandNew = membershipDiff({ [A]: ["pc:x"] }, { [A]: ["pc:x", "pc:new"] }, {}, 5000);
+  check("a genuinely new URL is not a return", brandNew.rejoined.length, 0);
+
+  // The prior state must not be mutated: two pollers share these blobs.
+  const priorMembers = { [A]: ["pc:x", "pc:y"] };
+  const priorDeparted = { "pc:q": 1 };
+  membershipDiff(priorMembers, { [A]: ["pc:x"] }, priorDeparted, 6000);
+  check("the stored membership is not mutated", priorMembers[A].length, 2);
+  check("the stored departures are not mutated", Object.keys(priorDeparted).join(), "pc:q");
+}
 
 console.log(fails ? `\n${fails} failed` : "\nall passed");
 process.exit(fails ? 1 : 0);

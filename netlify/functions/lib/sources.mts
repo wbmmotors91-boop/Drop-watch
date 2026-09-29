@@ -916,6 +916,15 @@ export type SitemapResult = {
   children: string[];
   /** Item key to the lastmod the sitemap gave it, empty string when absent. */
   lastmods: Record<string, string>;
+  /**
+   * The matching keys found in each child sitemap actually read this cycle.
+   *
+   * Membership has to be judged per child, and only for children that were
+   * genuinely re-read. The window rotates and a child can answer 304, so a
+   * key missing from this cycle's total is usually a child nobody looked at,
+   * not a product that left the store. Conflating those two invents removals.
+   */
+  membership: Record<string, string[]>;
   /** How many of the scanned URLs carried a lastmod at all. */
   withLastmod: number;
   /** The validators to send next time, per child sitemap. */
@@ -956,6 +965,7 @@ async function scanChildren(
   const { maxChildren = 2, disallowed = [], region = "", validators = {}, childCursor = 0 } = opts;
   const out: Item[] = [];
   const lastmods: Record<string, string> = {};
+  const membership: Record<string, string[]> = {};
   const nextValidators: Record<string, { etag: string; lastModified: string }> = {};
   let scanned = 0;
   let withLastmod = 0;
@@ -995,6 +1005,7 @@ async function scanChildren(
 
       const entries = extractUrlEntries(got.body);
       scanned += entries.length;
+      membership[child] = [];
       for (const { loc, lastmod } of entries) {
         if (lastmod) withLastmod++;
         if (isDisallowed(loc, disallowed)) continue;
@@ -1003,6 +1014,7 @@ async function scanChildren(
         // Key on the canonical URL so changing region never re-alerts.
         const key = `pc:${loc}`;
         lastmods[key] = lastmod;
+        membership[child].push(key);
         const sku = skuFromUrl(loc);
         out.push({
           key,
@@ -1034,6 +1046,7 @@ async function scanChildren(
   return {
     items: out,
     lastmods,
+    membership,
     withLastmod,
     validators: nextValidators,
     allUnchanged: unchanged > 0 && read === 0,
@@ -1072,7 +1085,7 @@ export async function pollSitemap(
     // another request proving the same thing.
     if (refused || !knownChildren.length) {
       return {
-        items: [], children: [], lastmods: {}, withLastmod: 0,
+        items: [], children: [], lastmods: {}, membership: {}, withLastmod: 0,
         validators: {}, allUnchanged: false, blocked: refused, challenged: false,
       };
     }
@@ -1088,7 +1101,7 @@ export async function pollSitemap(
   if (indexUnchanged) {
     if (!knownChildren.length) {
       notes.push("Pokémon Center: index unchanged but no child sitemaps remembered yet");
-      return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false, challenged: false };
+      return { items: [], children: [], lastmods: {}, membership: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false, challenged: false };
     }
     const scanned = await scanChildren(knownChildren, opts, include, exclude, notes);
     return {
@@ -1103,7 +1116,7 @@ export async function pollSitemap(
     notes.push(
       `Pokémon Center: challenged this cycle, standing down until the next one (${describeBody(indexXml)})`,
     );
-    return { items: [], children: [], lastmods: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false, challenged: true };
+    return { items: [], children: [], lastmods: {}, membership: {}, withLastmod: 0, validators: {}, allUnchanged: false, blocked: false, challenged: true };
   }
 
   // Prefer a child sitemap that names itself after products, but do not
