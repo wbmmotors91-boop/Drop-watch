@@ -1,7 +1,7 @@
 /* Drop Watch front end. Plain JS, no build step. */
 
 const $ = (id) => document.getElementById(id);
-const state = { publicKey: "", sub: null, reg: null };
+const state = { publicKey: "", sub: null, reg: null, devices: 0, reRegistered: false };
 
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 const standalone =
@@ -138,6 +138,24 @@ async function refreshAlertUi() {
   state.sub = await state.reg.pushManager.getSubscription();
   if (state.sub) {
     setAlertUi({ message: "Alerts are on for this device.", disable: true, test: true });
+    // Once per load, not on every refresh tick: the server only writes when
+    // the endpoint is new, but the request itself is not free.
+    //
+    // The phone having a subscription is not the same as the server knowing
+    // about it. If the registering call ever failed, or Android reissued the
+    // endpoint, this screen says alerts are on while nothing can reach it,
+    // which is exactly what "alerts are on but the test sent nothing" looks
+    // like. Re-registering on every load is cheap, the server dedupes on the
+    // endpoint, and it repairs that without anyone having to know.
+    if (!state.reRegistered) {
+      state.reRegistered = true;
+      const { body } = await api("subscribe", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(state.sub.toJSON()),
+      });
+      if (body && body.devices) state.devices = body.devices;
+    }
   } else if (Notification.permission === "denied") {
     setAlertUi({
       message: "Notifications are blocked for this site. Turn them back on in your browser settings.",
@@ -206,6 +224,14 @@ async function test() {
   const { body } = await api("test", { method: "POST" });
   const failed = !body.sent;
   $("test").textContent = failed ? "Nothing sent" : "Sent";
+  if (!failed) {
+    // Say what actually happened rather than only flashing "Sent". A send the
+    // server accepted and a notification that never arrives are different
+    // problems, and this line is the only way to tell them apart afterwards.
+    $("alert-state").textContent =
+      `Sent to ${body.sent} of ${body.devices} registered device${body.devices === 1 ? "" : "s"}. ` +
+      "If nothing appeared, Android is holding it back rather than the app failing to send.";
+  }
   // Put the explanation where the alert status already is, so it is readable
   // rather than crammed into a button.
   if (failed) {
@@ -216,6 +242,9 @@ async function test() {
     $("test").textContent = "Send a test";
     $("test").disabled = false;
   }, 2500);
+  // The alert line is deliberately left as it is. It survives until the next
+  // refresh, which is what makes it readable at all: the old version reset
+  // after two and a half seconds and left no trace of what went wrong.
 }
 
 async function find(ev) {
